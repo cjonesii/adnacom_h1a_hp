@@ -1,0 +1,323 @@
+#!/bin/bash
+
+# Adnacom H1A EEPROM SN Utility
+# Copyright Adnacom 2023-, Adnacom Inc
+
+# Project directory
+H1A_DIR=`pwd`
+# Serial Number input
+SERIALNUMBER=""
+# Binary file names
+FILENAME=""
+tmp1_eeprom="tmp1.bin"
+tmp2_eeprom="tmp2.bin"
+tmp3_sn="tmp3.bin"
+tmp4_file="tmp4.bin"
+# Set path to application executable
+eep_program=$H1A_DIR/src/eep
+
+# Help text
+usage () {
+cat <<EOF
+Usage: sudo ./h1aeep -f <filename>
+   or  sudo ./h1aeep -f <filename> -s <serial number>
+
+Where:
+ -f, binary file that contains the EEPROM configuration
+ -s, a 4 byte hex number representing the device serial number
+
+Examples:
+sudo ./h1aeep -f H1A-GEN2-LR-HP.bin
+sudo ./h1aeep -f H1A-GEN2-LR-HP.bin -s c9810844
+
+Notes:
+1. The tool only targets H1A device currently.
+2. If only the binary file is provided, the tool will try to use the serial number 
+   from the H1A device. If no serial number is found, the program will exit.
+
+EOF
+   exit
+}
+
+# Check all script prerequisites
+check_prerequisites() {
+    # Verify superuser access
+    if [ "$(id -u)" -ne 0 ]; then
+        echo "Please run as root"
+        exit
+    fi
+}
+
+# Check the eep module if build
+check_eep_program() {
+    if [[ ! -f "$eep_program" ]]; then
+        echo "H1A EEPROM program is missing, building program...."
+        cd $H1A_DIR
+        make
+    fi
+}
+
+# Read EEPROM
+get_eeprom_data() {
+    cd $H1A_DIR
+    sudo ./src/eep -s "$tmp1_eeprom"
+}
+
+# Read EEPROM after writing binary file
+read_eeprom_data_postop() {
+    cd $H1A_DIR
+    sudo ./src/eep -s "$tmp2_eeprom"
+}
+
+# Function to convert 4 bytes (32 bits) of hexadecimal string to little-endian binary
+hex_to_bin() {
+    local SERIALNUMBER=$1
+    local fouthbyte=""
+    local firstbyte=""
+    local secondbyte=""
+    local thirdbyte=""
+    local count=0
+
+    # Split the input into byte chunks
+    local chunks=$(echo "$SERIALNUMBER" | fold -w2)
+
+    # Loop through each chunk, arrange accordingly, and concatenate the result
+    for chunk in $chunks; do
+        count=$((count+1))
+        if [ $count = 1 ]; then
+            firstbyte="$(echo -n "$chunk" | xxd -r -ps)"
+        fi
+        if [ $count = 2 ]; then
+            secondbyte="$(echo -n "$chunk" | xxd -r -ps)"
+        fi
+        if [ $count = 3 ]; then
+            thirdbyte="$(echo -n "$chunk" | xxd -r -ps)"
+        fi
+        if [ $count = 4 ]; then
+            fourthbyte="$(echo -n "$chunk" | xxd -r -ps)"
+        fi
+    done
+
+    echo -n "$fourthbyte$thirdbyte$secondbyte$firstbyte"
+}
+
+# Convert Serial Number input to hex file
+input_to_bin() {
+    # Convert the hexadecimal input to little-endian binary data
+    binary_data=$(hex_to_bin "$SERIALNUMBER")
+
+    # Write the binary data to the file
+    echo -ne "$binary_data" > "$tmp3_sn"
+}
+
+# Function to check if a specific offset in the binary file is equal to a specific byte
+check_offset() {
+    local binary_file="$1"
+    local offset="$2"
+    local expected_byte="$3"
+
+    local byte_at_offset=$(xxd -p -s $offset -l 1 "$binary_file")
+    #echo "Byte at offset is $byte_at_offset"
+
+    if [ "$byte_at_offset" == "$expected_byte" ]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Function to replace the next four bytes at a given offset with data from another binary file
+replace_next_four_bytes() {
+    echo "Copying EEPROM Serial Number to file"
+    local binary_file="$1"
+    local offset="$2"
+    local replacement_file="$3"
+
+    dd conv=notrunc if="$replacement_file" of="$binary_file" bs=1 seek=$((offset+1)) count=4 2>/dev/null
+}
+
+# Function to read the next four bytes at a given offset and write to a binary file
+extract_next_four_bytes() {
+    local binary_file="$1"
+    local offset="$2"
+    local replacement_file="$3"
+
+    dd conv=notrunc if="$binary_file" of="$replacement_file" bs=1 skip=$((offset+1)) count=4 2>/dev/null
+}
+
+# Find serial number from binary file
+find_sn() {
+    cd $H1A_DIR
+
+    expected_byte=42
+    offset=4
+    max_attempts=4
+
+    # Check if the extracted binary file exist
+    if [[ ! -f "$tmp1_eeprom" ]]; then
+        echo "ERROR: File '$tmp1_eeprom' not found."
+        exit 1
+    fi
+
+    # Loop to perform the specified actions based on the outcome of the offset check
+    attempt=1
+    while (( attempt <= max_attempts )); do
+        if check_offset "$tmp1_eeprom" "$offset" "$expected_byte"; then
+            echo "Serial Number Register ID found in H1A EEPROM, extracting Serial Number"
+            extract_next_four_bytes "$tmp1_eeprom" "$((offset+1))" "$tmp3_sn"
+            break
+        else
+            #echo "Offset $offset in $tmp1_eeprom does not match the expected byte $expected_byte. Attempt: $attempt"
+            offset=$((offset + 6))
+            ((attempt++))
+        fi
+    done
+
+    if (( attempt > max_attempts )); then
+        echo "ERROR: Serial Number Register ID not found. Exiting."
+        exit 1
+    fi
+}
+
+# Put serial number to binary file 
+update_sn() {
+    cd $H1A_DIR
+
+    expected_byte=42
+    offset=4
+    max_attempts=4
+
+    # Check if the new binary file and serial number file exist
+    if [[ ! -f "$tmp4_file" ]]; then
+        echo "ERROR: Binary file '$tmp4_file' not found."
+        exit 1
+    fi
+    if [[ ! -f "$tmp3_sn" ]]; then
+        echo "ERROR: Serial number file '$tmp3_sn' not found."
+        exit 1
+    fi
+
+    # Loop to perform the specified actions based on the outcome of the offset check
+    attempt=1
+    while (( attempt <= max_attempts )); do
+        if check_offset "$tmp4_file" "$offset" "$expected_byte"; then
+            replace_next_four_bytes "$tmp4_file" "$((offset+1))" "$tmp3_sn"
+            break
+        else
+            offset=$((offset + 6))
+            ((attempt++))
+        fi
+    done
+
+    if (( attempt > max_attempts )); then
+        exit 1
+    fi
+}
+
+# Burn binary file to EEPROM
+write_eeprom_data() {
+    cd $H1A_DIR
+    sudo ./src/eep -l "$tmp4_file"
+}
+
+# Diff read from written EEPROM data 
+verify_data() {
+    read_eeprom_data_postop
+    diff $tmp4_file $tmp2_eeprom
+    if [[ `echo $?` -ne "0" ]]; then
+        echo "Read vs Written data mismatch."
+        exit 1
+    fi
+    echo "File is successfully uploaded to H1A EEPROM"
+}
+
+# Delete temporary binary files
+cleanup() {
+    sudo rm -rf tmp1.bin
+    sudo rm -rf tmp2.bin
+    sudo rm -rf tmp3.bin
+    sudo rm -rf tmp4.bin
+}
+
+# Main routine
+check_prerequisites
+
+[ $# -eq 0 ] && usage && exit 1
+
+ARGS=$(getopt -a -o f:s:h -- "$@")
+[ $? -ne 0 ] && usage
+eval set -- "${ARGS}"
+
+while true
+do
+    case "$1" in
+    -f)
+        FILENAME=$2; echo "FILENAME: $FILENAME"; shift;;
+    -s)
+        SERIALNUMBER=$2; echo "SERIAL NUMBER: $SERIALNUMBER"; shift;;
+    -h)
+        usage;;
+    --)
+        shift
+        break;;
+    esac
+shift
+done
+
+if [ "${FILENAME}1" = "1" ]; then
+    echo "Binary file is required"
+    usage
+    exit 1
+else
+    cp $FILENAME $tmp4_file
+fi
+
+check_eep_program
+
+if [[ $SERIALNUMBER ]]; then
+    # Check if the input is a valid hexadecimal value and its length is even (byte-aligned)
+    if ! [[ "$SERIALNUMBER" =~ ^[0-9a-fA-F]+$ ]]; then
+        echo "ERROR: Invalid hexadecimal input. It should be a valid hexadecimal value (e.g., 0011AABB)."
+        exit 1
+    fi
+
+    # Check serial number limits
+    if (( ${#SERIALNUMBER} > 8 )); then
+        echo "ERROR: The serial number input should be 4 bytes long"
+        exit 1
+    fi
+    if (( ${#SERIALNUMBER} < 8 )); then
+        echo "ERROR: The serial number input should be 4 bytes long"
+        exit 1
+    fi
+    input_to_bin
+else
+    get_eeprom_data
+    if [[ `echo $?` -ne "0" ]]; then
+        echo "Error reading H1A EEPROM. Exiting"
+        exit 1
+    fi
+    find_sn
+    if [[ `echo $?` -ne "0" ]]; then
+        echo "Serial Number in H1A EEPROM is missing. Exiting"
+        exit 1
+    fi
+fi
+
+update_sn
+if [[ `echo $?` -ne "0" ]]; then
+    echo "Binary File Error. Exiting"
+    exit
+fi
+
+write_eeprom_data
+if [[ `echo $?` -ne "0" ]]; then
+    echo "EEPROM Write Error. Exiting"
+    exit
+fi
+
+verify_data
+
+cleanup
+
+# End
