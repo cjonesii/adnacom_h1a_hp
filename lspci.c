@@ -10,15 +10,16 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
-
 #include "lspci.h"
-
+#include "pcimem.h"
 #include <stdbool.h>
+#include "eep.h"
+#include <unistd.h>
+#include <termios.h>
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
 #define ADNATOOL_VERSION    "0.0.1"
-#define CMD_LINE_ERR      2
 
 /* Options */
 
@@ -84,17 +85,7 @@ static char help_msg[] =
 GENERIC_HELP
 ;
 
-struct eep_options {
-    bool bVerbose;
-    int bLoadFile;
-    bool bIgnoreWarnings;
-    char    FileName[255];
-    int8_t      DeviceNumber;
-    u8      EepWidthSet;
-    u16     LimitPlxChip;
-    u8      LimitPlxRevision;
-    u16     ExtraBytes;
-};
+char g_h1a_us_port_bar0[256] = "\0";
 
 struct eep_options EepOptions;
 
@@ -1100,6 +1091,335 @@ show(void)
       show_device(d);
 }
 
+static uint8_t EepromFileLoad(void)
+{
+    printf("Function: %s\n", __func__);
+    uint8_t rc;
+    uint8_t *pBuffer;
+    uint8_t four_byte_count;
+    uint16_t Verify_Value_16 = 0;
+    uint32_t value;
+    uint32_t Verify_Value = 0;
+    uint32_t offset;
+    uint32_t FileSize;
+    FILE *pFile;
+
+    pBuffer   = NULL;
+
+    printf("Load EEPROM file... \n");
+    fflush(stdout);
+
+    // Open the file to read
+    pFile = fopen(EepOptions.FileName, "rb");
+    if (pFile == NULL) {
+        printf("ERROR: Unable to load \"%s\"\n", EepOptions.FileName);
+        return EEP_FAIL;
+    }
+
+    // Move to end-of-file
+    fseek(pFile, 0, SEEK_END);
+
+    // Determine file size
+    FileSize = ftell(pFile);
+
+    // Move back to start of file
+    fseek(pFile, 0, SEEK_SET);
+
+    // Allocate a buffer for the data
+    pBuffer = malloc(FileSize);
+    if (pBuffer == NULL) {
+        fclose(pFile);
+        return EEP_FAIL;
+    }
+
+    // Read data from file
+    if (fread(
+            pBuffer,        // Buffer for data
+            sizeof(uint8_t),// Item size
+            FileSize,       // Buffer size
+            pFile           // File pointer
+            ) <= 0) {
+        // Added for compiler warning
+    }
+
+    // Close the file
+    fclose(pFile);
+
+    printf("Ok (%dB)\n", (int)FileSize);
+
+    // Default to successful operation
+    rc = EXIT_SUCCESS;
+
+    printf("Program EEPROM..... \n");
+
+    // Write 32-bit aligned buffer into EEPROM
+    for (offset = 0, four_byte_count = 0; offset < (FileSize & ~0x3); four_byte_count++, offset += sizeof(uint32_t))
+    {
+        // Periodically update status
+        if ((offset & 0x7) == 0) {
+            // Display current status
+            printf("%02u%%\b\b\b", ((offset * 100) / FileSize));
+            fflush( stdout );
+        }
+
+        // Get next value
+        value = *(uint32_t*)(pBuffer + offset);
+
+        // Write value & read back to verify
+        eep_write(four_byte_count, value);
+        eep_read(four_byte_count, &Verify_Value);
+
+        if (Verify_Value != value) {
+            printf("ERROR: offset:%02X  wrote:%08X  read:%08X\n",
+                   offset, value, Verify_Value);
+            rc = EEP_FAIL;
+            goto _Exit_File_Load;
+        }
+    }
+
+    // Write any remaining 16-bit unaligned value
+    if (offset < FileSize) {
+        // Get next value
+        value = *(uint16_t*)(pBuffer + offset);
+
+        // Write value & read back to verify
+        eep_write_16(offset, (uint16_t)value);
+        eep_read_16(offset, &Verify_Value_16);
+
+        if (Verify_Value_16 != (uint16_t)value) {
+            printf("ERROR: offset:%02X  wrote:%04X  read:%04X\n",
+                   offset, value, Verify_Value_16);
+            goto _Exit_File_Load;
+        }
+    }
+    printf("Ok \n");
+
+_Exit_File_Load:
+    // Release the buffer
+    if (pBuffer != NULL) {
+        free(pBuffer);
+    }
+
+    return rc;
+}
+
+static uint8_t EepromFileSave(void)
+{
+    printf("Function: %s\n", __func__);
+    uint8_t *pBuffer;
+    uint32_t value = 0;
+    uint32_t offset;
+    uint8_t four_byte_count;
+    uint32_t EepSize;
+    FILE *pFile;
+
+    printf("Get EEPROM data size.. \n");
+
+    pBuffer = NULL;
+
+    // Start with EEPROM header size
+    EepSize = sizeof(uint32_t);
+
+    // Get EEPROM header
+    eep_read(0x0, &value);
+
+    // Add register byte count
+    EepSize += (value >> 16);
+
+    printf("Ok (%d Bytes", EepSize);
+
+    /* ExtraBytes may not be needed */
+    if (EepOptions.ExtraBytes) {
+        printf(" + %dB extra", EepOptions.ExtraBytes);
+
+        // Adjust for extra bytes
+        EepSize += EepOptions.ExtraBytes;
+
+        // Make sure size aligned on 16-bit boundary
+        EepSize = (EepSize + 1) & ~(uint32_t)0x1;
+    }
+    printf(")\n");
+
+    printf("Read EEPROM data...... \n");
+    fflush(stdout);
+
+    // Allocate a buffer for the EEPROM data
+    pBuffer = malloc(EepSize);
+    if (pBuffer == NULL) {
+        return EEP_FAIL;
+    }
+
+    // Each EEPROM read via BAR0 is 4 bytes so offset is represented in bytes (aligned in 32 bits)
+    // while four_byte_count is represented in count of 4-byte access
+    for (offset = 0, four_byte_count = 0; offset < (EepSize & ~0x3); offset += sizeof(uint32_t), four_byte_count++) {
+        eep_read(four_byte_count, (uint32_t*)(pBuffer + offset));
+    }
+
+    // Read any remaining 16-bit aligned byte
+    if (offset < EepSize) {
+        eep_read_16(four_byte_count, (uint16_t*)(pBuffer + offset));
+    }
+    printf("Ok\n");
+
+    printf("Write data to file.... \n");
+    fflush(stdout);
+
+    // Open the file to write
+    pFile = fopen(EepOptions.FileName, "wb");
+    if (pFile == NULL) {
+        return EEP_FAIL;
+    }
+
+    // Write buffer to file
+    fwrite(
+        pBuffer,        // Buffer to write
+        sizeof(uint8_t),     // Item size
+        EepSize,        // Buffer size
+        pFile           // File pointer
+        );
+
+    // Close the file
+    fclose(pFile);
+
+    // Release the buffer
+    if (pBuffer != NULL) {
+        free(pBuffer);
+    }
+
+    printf("Ok (%s)\n", EepOptions.FileName);
+
+    return EXIT_SUCCESS;
+}
+
+void eep_console_end(void)
+{
+}
+
+int eep_getch(void)
+{
+    int            retval;
+    char           ch;
+    struct termios Tty_Save;
+    struct termios Tty_New;
+
+
+    // Make sure all output data is flushed
+    fflush( stdout );
+
+    // Get current terminal attributes
+    tcgetattr( STDIN_FILENO, &Tty_Save );
+
+    // Copy attributes
+    Tty_New = Tty_Save;
+
+    // Disable canonical mode (handles special characters)
+    Tty_New.c_lflag &= ~ICANON;
+
+    // Disable character echo
+    Tty_New.c_lflag &= ~ECHO;
+
+    // Set timeouts
+    Tty_New.c_cc[VMIN]  = 1;   // Minimum chars to wait for
+    Tty_New.c_cc[VTIME] = 1;   // Minimum wait time
+
+    // Set new terminal attributes
+    if (tcsetattr( STDIN_FILENO, TCSANOW, &Tty_New ) != 0)
+        return 0;
+
+    // Get a single character from stdin
+    retval = read( STDIN_FILENO, &ch, 1 ); 
+
+    // Restore old settings
+    tcsetattr( STDIN_FILENO, TCSANOW, &Tty_Save );
+
+    if (retval > 0)
+        return (int)ch;
+
+    return 0;
+}
+
+static uint8_t EepFile(void)
+{
+    printf("Function: %s\n", __func__);
+    int status;
+
+    // Attempt to set EEPROM address width if requested
+    if (EepOptions.EepWidthSet != 0) {
+        printf("Set address width..... \n");
+        fflush(stdout);
+
+        status = eep_set_address_width(EepOptions.EepWidthSet);
+
+        if (0 == status) {
+            printf("ERROR: Unable to set to %dB addressing\n", EepOptions.EepWidthSet);
+            if (EepOptions.bIgnoreWarnings == false) {
+                return EEP_WIDTH_ERROR;
+            }
+        } else {
+            printf("Ok (%d-byte)\n", EepOptions.EepWidthSet);
+        }
+    }
+
+    if (EepOptions.bLoadFile) {
+        return EepromFileLoad();
+    } else {
+        return EepromFileSave();
+    }
+}
+
+static void get_resource_name(struct pci_dev *p)
+{
+    char g_h1a_us_port_fname[17] = "\0";
+
+    snprintf(g_h1a_us_port_fname,
+             (int)sizeof(g_h1a_us_port_fname),
+             "%04x:%02x:%02x.%d", 
+             p->domain,
+             p->bus,
+             p->dev,
+             p->func);
+
+    snprintf(g_h1a_us_port_bar0,
+             (int)sizeof(g_h1a_us_port_bar0),
+             "/sys/bus/pci/devices/%s/resource0",
+             g_h1a_us_port_fname);
+}
+
+static int eep_process(int j)
+{
+    struct device *d;
+    int eep_present = EEP_PRSNT_MAX;
+    int status = EXIT_SUCCESS;
+
+    for (d=first_dev; d; d=d->next) {
+        if (d->NumDevice == j) {
+            get_resource_name(d->dev);
+            eep_present = eep_read_status_reg();
+
+            switch (eep_present) {
+            case NOT_PRSNT:
+                printf("No EEPROM Present\n");
+                status = EXIT_FAILURE;
+            break;
+            case PRSNT_VALID:
+                printf("EEPROM present with valid data\n");
+            break;
+            case PRSNT_INVALID:
+                printf("Present but invalid data/CRC error/blank\n");
+                eep_init();
+                printf("EEPROM initialization done, please restart your computer.\n");
+            break;
+            }
+
+            if (EXIT_SUCCESS == status) {
+                status = EepFile();
+            } else {
+                return status;
+            }
+        }
+    }
+}
+
 static void DisplayHelp(void)
 {
     printf(
@@ -1446,12 +1766,11 @@ main(int argc, char **argv)
   if (j == 0)
     goto __exit;
 
-  printf("[%d] Selected\n", j);
-
-
+  status = eep_process(j);
+  if (status == EXIT_FAILURE)
+    goto __exit;
 
 __exit:
-
   show_kernel_cleanup();
   pci_cleanup(pacc);
 

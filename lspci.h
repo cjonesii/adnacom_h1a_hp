@@ -8,6 +8,7 @@
 
 #define PCIUTILS_LSPCI
 #include "pciutils.h"
+#include <stdbool.h>
 
 /*
  *  If we aren't being compiled by GCC, use xmalloc() instead of alloca().
@@ -22,6 +23,12 @@
 #undef alloca
 #define alloca xmalloc
 #endif
+
+#define PRINT_ERROR \
+    do { \
+        fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", \
+        __LINE__, __FILE__, errno, strerror(errno)); exit(1); \
+    } while(0)
 
 /*** Options ***/
 
@@ -43,6 +50,18 @@ struct device {
   byte *config;				/* Cached configuration space data */
   byte *present;			/* Maps which configuration bytes are present */
   int NumDevice;
+};
+
+struct eep_options {
+    bool bVerbose;
+    int bLoadFile;
+    bool bIgnoreWarnings;
+    char    FileName[255];
+    int8_t      DeviceNumber;
+    u8      EepWidthSet;
+    u16     LimitPlxChip;
+    u8      LimitPlxRevision;
+    u16     ExtraBytes;
 };
 
 extern struct device *first_dev;
