@@ -1010,10 +1010,12 @@ show_ext_caps(struct device *d, int type)
 	break;
       id = header & 0xffff;
       version = (header >> 16) & 0xf;
-      printf("\tCapabilities: [%03x", where);
+      if (id == PCI_EXT_CAP_ID_DSN) {
+        printf("\tCapabilities: [%03x", where);
       if (verbose > 1)
 	printf(" v%d", version);
       printf("] ");
+      }
       if (been_there[where]++)
 	{
 	  printf("<chain looped>\n");
@@ -1024,6 +1026,7 @@ show_ext_caps(struct device *d, int type)
 	  case PCI_EXT_CAP_ID_NULL:
 	    printf("Null\n");
 	    break;
+#ifndef ADNA
 	  case PCI_EXT_CAP_ID_AER:
 	    cap_aer(d, where, type);
 	    break;
@@ -1034,9 +1037,11 @@ show_ext_caps(struct device *d, int type)
 	  case PCI_EXT_CAP_ID_VC2:
 	    cap_vc(d, where);
 	    break;
+#endif // ADNA
 	  case PCI_EXT_CAP_ID_DSN:
 	    cap_dsn(d, where);
 	    break;
+#ifndef ADNA
 	  case PCI_EXT_CAP_ID_PB:
 	    printf("Power Budgeting <?>\n");
 	    break;
@@ -1139,8 +1144,11 @@ show_ext_caps(struct device *d, int type)
 	  case PCI_EXT_CAP_ID_NPEM:
 	    printf("Native PCIe Enclosure Management <?>\n");
 	    break;
+#endif // ADNA
 	  default:
+#ifndef ADNA
 	    printf("Extended Capability ID %#02x\n", id);
+#endif // ADNA
 	    break;
 	}
       where = (header >> 20) & ~3;

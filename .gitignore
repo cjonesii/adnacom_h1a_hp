@@ -7,3 +7,11 @@ setpci
 example
 update-pciids
 pci.ids.gz
+lspcicaps
+pcibars
+pciheader
+scan_adnacom
+.vscode/
+.settings/
+.project
+.cproject

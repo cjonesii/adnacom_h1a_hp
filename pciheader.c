@@ -187,7 +187,7 @@ void print_pci_header(struct pci_dev *pdev) {
 struct pci_dev * search_device(struct pci_access *pacc, u8 bus, u8 slot, u8 func) {
 	struct pci_dev *dev;
 	for(dev = pacc->devices; dev != NULL; dev = dev->next){
-		if((dev-> bus == bus) &&
+		if((dev->bus == bus) &&
 		   (dev->dev == slot) &&
 		   (dev->func == func))
 			return dev;

@@ -13,6 +13,8 @@
 
 #include "lspci.h"
 
+#include <stdbool.h>
+
 /* Options */
 
 int verbose;				/* Show detailed information */
@@ -84,6 +86,48 @@ struct device *first_dev;
 static int seen_errors;
 static int need_topology;
 
+struct adnatool_pci_device {
+        u16 vid;
+        u16 did;
+        u32 cls_rev;
+} adnatool_pci_devtbl[] = {
+#if 0
+        { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+        { .vid = PLX_VENDOR_ID,     .did = PLX_H18_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+        { .vid = ASMEDIA_VENDOR_ID, .did = ASMEDIA_DEVICE_ID, .cls_rev = PCI_CLASS_SERIAL_USB, },
+        { .vid = TI_VENDOR_ID,      .did = TI_DEVICE_ID,      .cls_rev = PCI_CLASS_SERIAL_USB, },
+
+#else
+        /* for debugging purpose, put in some actual PCI devices i have 
+         * in my system. TODO: remove these! */
+
+        { .vid = 0x8086, .did = 0x02bc, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+        { .vid = 0x8086, .did = 0x02b0, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+#endif
+        {0}, /* sentinel */
+
+};
+
+bool pcidev_is_adnacom(struct pci_dev *p);
+
+bool pcidev_is_adnacom(struct pci_dev *p)
+{
+        struct adnatool_pci_device *entry;
+        pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_BASES | PCI_FILL_CLASS);
+        // printf("vendor: 0x%02x device: 0x%02x\n", p->vendor_id, p->device_id);
+        for (entry = adnatool_pci_devtbl; entry->vid != 0; entry++) {
+                // printf("entry: 0x%02x device: 0x%02x\n", entry->vid, entry->did);
+                if (p->vendor_id != entry->vid)
+                        continue;
+                if (p->device_id != entry->did)
+                        continue;
+                if (p->device_class != entry->cls_rev)
+                        continue;
+                return true;
+        }
+        return false;
+}
+
 int
 config_fetch(struct device *d, unsigned int pos, unsigned int len)
 {
@@ -121,6 +165,10 @@ scan_device(struct pci_dev *p)
     opt_domains = 1;
   if (!pci_filter_match(&filter, p) && !need_topology)
     return NULL;
+
+  if (!pcidev_is_adnacom(p))
+    return NULL;
+
   d = xmalloc(sizeof(struct device));
   memset(d, 0, sizeof(*d));
   d->dev = p;
@@ -226,7 +274,7 @@ compare_them(const void *A, const void *B)
 }
 
 static void
-sort_them(void)
+sort_them(int *NumDevices)
 {
   struct device **index, **h, **last_dev;
   int cnt;
@@ -248,6 +296,10 @@ sort_them(void)
       h++;
     }
   *last_dev = NULL;
+  int i=1;
+  for (d=first_dev; d; d=d->next)
+    d->NumDevice = i++;
+  *NumDevices = i;
 }
 
 /*** Normal output ***/
@@ -272,7 +324,7 @@ show_slot_path(struct device *d)
 	  return;
 	}
     }
-  printf("%02x:%02x.%d", p->bus, p->dev, p->func);
+  printf("[%d] %02x:%02x.%d", d->NumDevice, p->bus, p->dev, p->func);
 }
 
 static void
@@ -547,6 +599,7 @@ show_htype0(struct device *d)
 static void
 show_htype1(struct device *d)
 {
+#ifndef ADNA
   u32 io_base = get_conf_byte(d, PCI_IO_BASE);
   u32 io_limit = get_conf_byte(d, PCI_IO_LIMIT);
   u32 io_type = io_base & PCI_IO_RANGE_TYPE_MASK;
@@ -639,7 +692,7 @@ show_htype1(struct device *d)
 	FLAG(brc, PCI_BRIDGE_CTL_DISCARD_TIMER_STATUS),
 	FLAG(brc, PCI_BRIDGE_CTL_DISCARD_TIMER_SERR_EN));
     }
-
+#endif ADNA
   show_caps(d, PCI_CAPABILITY_LIST);
 }
 
@@ -715,17 +768,21 @@ static void
 show_verbose(struct device *d)
 {
   struct pci_dev *p = d->dev;
-  word status = get_conf_word(d, PCI_STATUS);
-  word cmd = get_conf_word(d, PCI_COMMAND);
   word class = p->device_class;
-  byte bist = get_conf_byte(d, PCI_BIST);
   byte htype = get_conf_byte(d, PCI_HEADER_TYPE) & 0x7f;
+  unsigned int irq;
+  byte max_lat, min_gnt;
+  char *dt_node;
+
+#ifndef ADNA
+  char *iommu_group;
+  word cmd = get_conf_word(d, PCI_COMMAND);
+  byte int_pin = get_conf_byte(d, PCI_INTERRUPT_PIN);
   byte latency = get_conf_byte(d, PCI_LATENCY_TIMER);
   byte cache_line = get_conf_byte(d, PCI_CACHE_LINE_SIZE);
-  byte max_lat, min_gnt;
-  byte int_pin = get_conf_byte(d, PCI_INTERRUPT_PIN);
-  unsigned int irq;
-  char *dt_node, *iommu_group;
+  byte bist = get_conf_byte(d, PCI_BIST);
+  word status = get_conf_word(d, PCI_STATUS);
+#endif
 
   show_terse(d);
 
@@ -761,7 +818,7 @@ show_verbose(struct device *d)
 
   if (dt_node = pci_get_string_property(p, PCI_FILL_DT_NODE))
     printf("\tDevice tree node: %s\n", dt_node);
-
+#ifndef ADNA
   if (verbose > 1)
     {
       printf("\tControl: I/O%c Mem%c BusMaster%c SpecCycle%c MemWINV%c VGASnoop%c ParErr%c Stepping%c SERR%c FastB2B%c DisINTx%c\n",
@@ -854,7 +911,7 @@ show_verbose(struct device *d)
       else
 	printf("\tBIST result: %02x\n", bist & PCI_BIST_CODE_MASK);
     }
-
+#endif // ADNA
   switch (htype)
     {
     case PCI_HEADER_TYPE_NORMAL:
@@ -979,15 +1036,17 @@ void
 show_device(struct device *d)
 {
   if (opt_machine)
-    show_machine(d);
+    show_machine(d); // not used by Adna
   else
     {
       if (verbose)
 	show_verbose(d);
       else
 	show_terse(d);
+#ifndef ADNA
       if (opt_kernel || verbose)
 	show_kernel(d);
+#endif // ADNA
     }
   if (opt_hex)
     show_hex_dump(d);
@@ -1010,8 +1069,9 @@ show(void)
 int
 main(int argc, char **argv)
 {
-  int i;
+  int i, j;
   char *msg;
+  int NumDevices = 1;
 
   if (argc == 2 && !strcmp(argv[1], "--version"))
     {
@@ -1106,7 +1166,7 @@ main(int argc, char **argv)
     }
   if (opt_query_all)
     pacc->id_lookup_mode |= PCI_LOOKUP_NETWORK | PCI_LOOKUP_SKIP_LOCAL;
-
+  verbose = 2; // very verbose by default
   pci_init(pacc);
   if (opt_map_mode)
     {
@@ -1117,7 +1177,7 @@ main(int argc, char **argv)
   else
     {
       scan_devices();
-      sort_them();
+      sort_them(&NumDevices);
       if (need_topology)
 	grow_tree();
       if (opt_tree)
@@ -1125,6 +1185,29 @@ main(int argc, char **argv)
       else
 	show();
     }
+
+  // Check devices exist and one was selected
+  if (NumDevices == 1)
+    goto __exit;
+
+  printf("[0] Cancel\n\n");
+  do {
+    printf("    Device selection --> ");
+    if (scanf("%d", &j) <= 0)
+    {
+        // Added for compiler warning
+    }
+  } while (j > NumDevices);
+
+  if (j == 0)
+    goto __exit;
+
+  printf("[%d] Selected\n", i);
+
+
+
+__exit:
+
   show_kernel_cleanup();
   pci_cleanup(pacc);
 

@@ -1,7 +1,7 @@
 # Makefile for The PCI Utilities
 # (c) 1998--2020 Martin Mares <mj@ucw.cz>
 
-OPT=-O2
+OPT=-O0
 CFLAGS=$(OPT) -Wall -W -Wno-parentheses -Wstrict-prototypes -Wmissing-prototypes -g
 
 VERSION=3.7.0
@@ -108,8 +108,12 @@ lspcicaps: lspcicaps.o lib/$(PCILIB)
 lspcicaps.o: lspcicaps.c $(PCIINC)
 
 # scan_adnacom
-scan_adnacom: scan_adnacom.o lib/$(PCILIB)
-scan_adnacom.o: scan_adnacom.c $(PCIINC)
+# scan_adnacom: scan_adnacom.o lib/$(PCILIB)
+# scan_adnacom.o: scan_adnacom.c $(PCIINC)
+
+# lspci
+lspci: lspci.o lib/$(PCILIB)
+lspci.o: lspci.c $(PCIINC)
 
 %: %.o
 	$(CC) $(LDFLAGS) $(TARGET_ARCH) $^ $(LDLIBS) -o $@

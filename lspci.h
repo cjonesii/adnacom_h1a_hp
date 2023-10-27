@@ -42,6 +42,7 @@ struct device {
   unsigned int config_cached, config_bufsize;
   byte *config;				/* Cached configuration space data */
   byte *present;			/* Maps which configuration bytes are present */
+  int NumDevice;
 };
 
 extern struct device *first_dev;
@@ -62,6 +63,8 @@ void get_subid(struct device *d, word *subvp, word *subdp);
 #define FLAG(x,y) ((x & y) ? '+' : '-')
 #define BITS(x,at,width) (((x) >> (at)) & ((1 << (width)) - 1))
 #define TABLE(tab,x,buf) ((x) < sizeof(tab)/sizeof((tab)[0]) ? (tab)[x] : (sprintf((buf), "??%d", (x)), (buf)))
+
+#define ADNA // Selective lspci print out
 
 /* ls-vpd.c */
 

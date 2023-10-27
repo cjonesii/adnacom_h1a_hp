@@ -799,10 +799,13 @@ static void cap_express_link(struct device *d, int where, int type)
   aspm = (t & PCI_EXP_LNKCAP_ASPM) >> 10;
   cap_speed = t & PCI_EXP_LNKCAP_SPEED;
   cap_width = (t & PCI_EXP_LNKCAP_WIDTH) >> 4;
+#ifndef ADNA
   printf("\t\tLnkCap:\tPort #%d, Speed %s, Width x%d, ASPM %s",
 	t >> 24,
 	link_speed(cap_speed), cap_width,
 	aspm_support(aspm));
+#endif // ADNA
+  printf("\t  LnkCap: ASPM %s", aspm_support(aspm)); // Custom
   if (aspm)
     {
       printf(", Exit Latency ");
@@ -813,15 +816,17 @@ static void cap_express_link(struct device *d, int where, int type)
 	    latency_l1((t & PCI_EXP_LNKCAP_L1) >> 15));
     }
   printf("\n");
+#ifndef ADNA
   printf("\t\t\tClockPM%c Surprise%c LLActRep%c BwNot%c ASPMOptComp%c\n",
 	FLAG(t, PCI_EXP_LNKCAP_CLOCKPM),
 	FLAG(t, PCI_EXP_LNKCAP_SURPRISE),
 	FLAG(t, PCI_EXP_LNKCAP_DLLA),
 	FLAG(t, PCI_EXP_LNKCAP_LBNC),
 	FLAG(t, PCI_EXP_LNKCAP_AOC));
-
+#endif // ADNA
   w = get_conf_word(d, where + PCI_EXP_LNKCTL);
-  printf("\t\tLnkCtl:\tASPM %s;", aspm_enabled(w & PCI_EXP_LNKCTL_ASPM));
+  printf("\t  LnkCtl: ASPM %s\n", aspm_enabled(w & PCI_EXP_LNKCTL_ASPM));  // Custom
+#ifndef ADNA
   if ((type == PCI_EXP_TYPE_ROOT_PORT) || (type == PCI_EXP_TYPE_ENDPOINT) ||
       (type == PCI_EXP_TYPE_LEG_END) || (type == PCI_EXP_TYPE_PCI_BRIDGE))
     printf(" RCB %d bytes,", w & PCI_EXP_LNKCTL_RCB ? 128 : 64);
@@ -833,15 +838,16 @@ static void cap_express_link(struct device *d, int where, int type)
 	FLAG(w, PCI_EXP_LNKCTL_HWAUTWD),
 	FLAG(w, PCI_EXP_LNKCTL_BWMIE),
 	FLAG(w, PCI_EXP_LNKCTL_AUTBWIE));
-
+#endif
   w = get_conf_word(d, where + PCI_EXP_LNKSTA);
   sta_speed = w & PCI_EXP_LNKSTA_SPEED;
   sta_width = (w & PCI_EXP_LNKSTA_WIDTH) >> 4;
-  printf("\t\tLnkSta:\tSpeed %s (%s), Width x%d (%s)\n",
+  printf("\t  LnkSta: Speed %s (%s), Width x%d (%s), ",
 	link_speed(sta_speed),
 	link_compare(sta_speed, cap_speed),
 	sta_width,
 	link_compare(sta_width, cap_width));
+#ifndef ADNA
   printf("\t\t\tTrErr%c Train%c SlotClk%c DLActive%c BWMgmt%c ABWMgmt%c\n",
 	FLAG(w, PCI_EXP_LNKSTA_TR_ERR),
 	FLAG(w, PCI_EXP_LNKSTA_TRAIN),
@@ -849,6 +855,8 @@ static void cap_express_link(struct device *d, int where, int type)
 	FLAG(w, PCI_EXP_LNKSTA_DL_ACT),
 	FLAG(w, PCI_EXP_LNKSTA_BWMGMT),
 	FLAG(w, PCI_EXP_LNKSTA_AUTBW));
+#endif
+  printf("LinkActive %s\n", FLAG(w, PCI_EXP_LNKSTA_DL_ACT) == "+" ? "Yes" : "No");
 }
 
 static const char *indicator(int code)
@@ -863,6 +871,7 @@ static void cap_express_slot(struct device *d, int where)
   u16 w;
 
   t = get_conf_long(d, where + PCI_EXP_SLTCAP);
+#ifndef ADNA
   printf("\t\tSltCap:\tAttnBtn%c PwrCtrl%c MRL%c AttnInd%c PwrInd%c HotPlug%c Surprise%c\n",
 	FLAG(t, PCI_EXP_SLTCAP_ATNB),
 	FLAG(t, PCI_EXP_SLTCAP_PWRC),
@@ -876,8 +885,10 @@ static void cap_express_slot(struct device *d, int where)
 	power_limit((t & PCI_EXP_SLTCAP_PWR_VAL) >> 7, (t & PCI_EXP_SLTCAP_PWR_SCL) >> 15),
 	FLAG(t, PCI_EXP_SLTCAP_INTERLOCK),
 	FLAG(t, PCI_EXP_SLTCAP_NOCMDCOMP));
-
+#endif // ADNA
+printf("\t  SltCap: Hotplug %s\n", FLAG(t, PCI_EXP_SLTCAP_HPC) == "+" ? "Capable" : "Not Capable"); // Custom
   w = get_conf_word(d, where + PCI_EXP_SLTCTL);
+#ifndef ADNA
   printf("\t\tSltCtl:\tEnable: AttnBtn%c PwrFlt%c MRL%c PresDet%c CmdCplt%c HPIrq%c LinkChg%c\n",
 	FLAG(w, PCI_EXP_SLTCTL_ATNB),
 	FLAG(w, PCI_EXP_SLTCTL_PWRF),
@@ -891,8 +902,9 @@ static void cap_express_slot(struct device *d, int where)
 	indicator((w & PCI_EXP_SLTCTL_PWRI) >> 8),
 	FLAG(w, PCI_EXP_SLTCTL_PWRC),
 	FLAG(w, PCI_EXP_SLTCTL_INTERLOCK));
-
+#endif // ADNA
   w = get_conf_word(d, where + PCI_EXP_SLTSTA);
+#ifndef ADNA
   printf("\t\tSltSta:\tStatus: AttnBtn%c PowerFlt%c MRL%c CmdCplt%c PresDet%c Interlock%c\n",
 	FLAG(w, PCI_EXP_SLTSTA_ATNB),
 	FLAG(w, PCI_EXP_SLTSTA_PWRF),
@@ -904,6 +916,7 @@ static void cap_express_slot(struct device *d, int where)
 	FLAG(w, PCI_EXP_SLTSTA_MRLS),
 	FLAG(w, PCI_EXP_SLTSTA_PRSD),
 	FLAG(w, PCI_EXP_SLTSTA_LLCHG));
+#endif // ADNA
 }
 
 static void cap_express_root(struct device *d, int where)
@@ -1395,12 +1408,14 @@ cap_express(struct device *d, int where, int cap)
     size = 32;
   if (!config_fetch(d, where + PCI_EXP_DEVCAP, size))
     return type;
-
+#ifndef ADNA
   cap_express_dev(d, where, type);
+#endif
   if (link)
     cap_express_link(d, where, type);
   if (slot)
     cap_express_slot(d, where);
+  return type; // Custom, Early out
   if (type == PCI_EXP_TYPE_ROOT_PORT || type == PCI_EXP_TYPE_ROOT_EC)
     cap_express_root(d, where);
 
@@ -1685,28 +1700,32 @@ show_caps(struct device *d, int where)
       while (where)
 	{
 	  int id, next, cap;
-	  printf("\tCapabilities: ");
+
 	  if (!config_fetch(d, where, 4))
 	    {
 	      puts("<access denied>");
 	      break;
 	    }
 	  id = get_conf_byte(d, where + PCI_CAP_LIST_ID);
-	  next = get_conf_byte(d, where + PCI_CAP_LIST_NEXT) & ~3;
-	  cap = get_conf_word(d, where + PCI_CAP_FLAGS);
-	  printf("[%02x] ", where);
-	  if (been_there[where]++)
-	    {
-	      printf("<chain looped>\n");
-	      break;
-	    }
-	  if (id == 0xff)
-	    {
-	      printf("<chain broken>\n");
-	      break;
-	    }
+      if (PCI_CAP_ID_EXP == id)
+        printf("\tCapabilities: ");
+        next = get_conf_byte(d, where + PCI_CAP_LIST_NEXT) & ~3;
+        cap = get_conf_word(d, where + PCI_CAP_FLAGS);
+      if (PCI_CAP_ID_EXP == id)
+        printf("[%02x] ", where);
+
+      if (been_there[where]++) {
+          printf("<chain looped>\n");
+          break;
+      }
+      if (id == 0xff) {
+          printf("<chain broken>\n");
+          break;
+      }
+
 	  switch (id)
 	    {
+#ifndef ADNA
 	    case PCI_CAP_ID_NULL:
 	      printf("Null\n");
 	      break;
@@ -1756,10 +1775,12 @@ show_caps(struct device *d, int where)
 	    case PCI_CAP_ID_SECURE:
 	      printf("Secure device <?>\n");
 	      break;
+#endif // ADNA
 	    case PCI_CAP_ID_EXP:
 	      type = cap_express(d, where, cap);
 	      can_have_ext_caps = 1;
-	      break;
+	      break; 
+#ifndef ADNA
 	    case PCI_CAP_ID_MSIX:
 	      cap_msix(d, where, cap);
 	      break;
@@ -1772,8 +1793,12 @@ show_caps(struct device *d, int where)
 	    case PCI_CAP_ID_EA:
 	      cap_ea(d, where, cap);
 	      break;
+#endif // ADNA
 	    default:
+          break;
+#ifndef ADNA
 	      printf("Capability ID %#02x [%04x]\n", id, cap);
+#endif // ADNA
 	    }
 	  where = next;
 	}
