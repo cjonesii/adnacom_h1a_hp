@@ -15,6 +15,11 @@
 
 #include <stdbool.h>
 
+#define PLX_VENDOR_ID       (0x10B5)
+#define PLX_H1A_DEVICE_ID   (0x8608)
+#define ADNATOOL_VERSION    "0.0.1"
+#define CMD_LINE_ERR      2
+
 /* Options */
 
 int verbose;				/* Show detailed information */
@@ -79,6 +84,20 @@ static char help_msg[] =
 GENERIC_HELP
 ;
 
+struct eep_options {
+    bool bVerbose;
+    int bLoadFile;
+    bool bIgnoreWarnings;
+    char    FileName[255];
+    int8_t      DeviceNumber;
+    u8      EepWidthSet;
+    u16     LimitPlxChip;
+    u8      LimitPlxRevision;
+    u16     ExtraBytes;
+};
+
+struct eep_options EepOptions;
+
 /*** Our view of the PCI bus ***/
 
 struct pci_access *pacc;
@@ -93,22 +112,32 @@ struct adnatool_pci_device {
 } adnatool_pci_devtbl[] = {
 #if 0
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
-        { .vid = PLX_VENDOR_ID,     .did = PLX_H18_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
-        { .vid = ASMEDIA_VENDOR_ID, .did = ASMEDIA_DEVICE_ID, .cls_rev = PCI_CLASS_SERIAL_USB, },
-        { .vid = TI_VENDOR_ID,      .did = TI_DEVICE_ID,      .cls_rev = PCI_CLASS_SERIAL_USB, },
-
 #else
         /* for debugging purpose, put in some actual PCI devices i have 
          * in my system. TODO: remove these! */
-
-        { .vid = 0x8086, .did = 0x02bc, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
         { .vid = 0x8086, .did = 0x02b0, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+        { .vid = 0x10ec, .did = 0xc82f, .cls_rev = PCI_CLASS_NETWORK_OTHER, },
 #endif
         {0}, /* sentinel */
 
 };
 
+int pci_get_devtype(struct pci_dev *pdev);
+bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
+
+int pci_get_devtype(struct pci_dev *pdev)
+{
+        struct pci_cap *cap;
+        cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+        int devtype = pci_read_word(pdev, cap->addr + PCI_EXP_FLAGS);
+        return ((devtype & PCI_EXP_FLAGS_TYPE) >> 4) & 0xFF;
+}
+
+bool pci_is_upstream(struct pci_dev *pdev)
+{
+        return pci_get_devtype(pdev) == PCI_EXP_TYPE_UPSTREAM;
+}
 
 bool pcidev_is_adnacom(struct pci_dev *p)
 {
@@ -167,6 +196,9 @@ scan_device(struct pci_dev *p)
     return NULL;
 
   if (!pcidev_is_adnacom(p))
+    return NULL;
+
+  if (!pci_is_upstream(p))
     return NULL;
 
   d = xmalloc(sizeof(struct device));
@@ -400,11 +432,13 @@ show_terse(struct device *d)
       if (p->label)
         printf("\tDeviceName: %s", p->label);
       get_subid(d, &subsys_v, &subsys_d);
+#ifndef ADNA
       if (subsys_v && subsys_v != 0xffff)
 	printf("\tSubsystem: %s\n",
 		pci_lookup_name(pacc, ssnamebuf, sizeof(ssnamebuf),
 			PCI_LOOKUP_SUBSYSTEM | PCI_LOOKUP_VENDOR | PCI_LOOKUP_DEVICE,
 			p->vendor_id, p->device_id, subsys_v, subsys_d));
+#endif // ADNA
     }
 }
 
@@ -591,8 +625,10 @@ show_rom(struct device *d, int reg)
 static void
 show_htype0(struct device *d)
 {
+#ifndef ADNA
   show_bases(d, 6);
   show_rom(d, PCI_ROM_ADDRESS);
+#endif // ADNA
   show_caps(d, PCI_CAPABILITY_LIST);
 }
 
@@ -1064,6 +1100,202 @@ show(void)
       show_device(d);
 }
 
+static void DisplayHelp(void)
+{
+    printf(
+        "\n"
+        "EEPROM file utility for Adnacom devices.\n"
+        "\n"
+        " Usage: eep -l|-s file [-v]\n"
+        "\n"
+        " Options:\n"
+        "   -l | -s       Load (-l) file to EEPROM -OR- Save (-s) EEPROM to file\n"
+        "   file          Specifies the file to load or save\n"
+        "   -v            Verbose output (for debug purposes)\n"
+        "   -h or -?      This help screen\n"
+        "\n"
+        "  Sample command\n"
+        "  -----------------\n"
+        "  eep -l MyEeprom.bin\n"
+        "\n"
+        );
+}
+
+static uint8_t ProcessCommandLine(int argc, char *argv[])
+{
+    uint16_t i;
+    char *pToken;
+    bool bChipTypeValid;
+    bool bGetFileName;
+    bool bGetChipType;
+    bool bGetEepWidth;
+    bool bGetByteCount;
+    bool bGetDeviceNum;
+
+    bGetFileName  = false;
+    bGetChipType  = false;
+    bGetEepWidth  = false;
+    bGetDeviceNum = false;
+    bGetByteCount = false;
+
+    for (i = 1; i < argc; i++) {
+        if (bGetFileName) {
+            if (argv[i][0] == '-') {
+                printf("ERROR: File name not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Get file name
+            strcpy(EepOptions.FileName, argv[i]);
+
+            // Flag parameter retrieved
+            bGetFileName = false;
+        } else if (bGetChipType) {
+            if (argv[i][0] == '-') {
+                printf("ERROR: PLX chip type not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Get pointer to chip type
+            pToken = strtok(argv[i], ", ");
+
+            // Convert parameter to chip type
+            EepOptions.LimitPlxChip = (u16)strtol(pToken, NULL, 16);
+
+            // Get pointer to revision
+            pToken = strtok(NULL, " ");
+
+            // Convert to a revision if provided
+            if (pToken != NULL) {
+                EepOptions.LimitPlxRevision = (u8)strtol(pToken, NULL, 16);
+            }
+
+            // Default to valid chip type
+            bChipTypeValid = true;
+
+            // Verify supported chip type
+            if ((EepOptions.LimitPlxChip & 0xFF00) != 0x8600) {
+                bChipTypeValid = false;
+            }
+
+            if (bChipTypeValid == false) {
+                printf("ERROR: Invalid PLX chip type\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Flag parameter retrieved
+            bGetChipType = false;
+        } else if (bGetEepWidth) {
+            if (argv[i][0] == '-') {
+                printf("ERROR: EEPROM address width override not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Convert parameter to decimal
+            EepOptions.EepWidthSet = atoi(argv[i]);
+
+            // Flag parameter retrieved
+            bGetEepWidth = false;
+        } else if (bGetDeviceNum) {
+            if (argv[i][0] == '-') {
+                printf("ERROR: Device number not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Convert parameter to decimal
+            EepOptions.DeviceNumber = atoi(argv[i]);
+
+            // Listing starts @ 1, so decrement since device list starts @ 0
+            EepOptions.DeviceNumber--;
+
+            // Flag parameter retrieved
+            bGetDeviceNum = false;
+        } else if (bGetByteCount) {
+            if (argv[i][0] == '-') {
+                printf("ERROR: Extra byte count not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Convert parameter to decimal byte count
+            EepOptions.ExtraBytes = (u16)atol(argv[i]);
+
+            if (EepOptions.ExtraBytes == 0) {
+                printf("ERROR: Invalid extra byte count\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Flag parameter retrieved
+            bGetByteCount = false;
+        } else if ((strcasecmp(argv[i], "-?") == 0) ||
+                   (strcasecmp(argv[i], "-h") == 0)) {
+            
+            DisplayHelp();
+            return EXIT_FAILURE;
+        } else if (strcasecmp(argv[i], "-v") == 0) {
+            EepOptions.bVerbose = true;
+        } else if (strcasecmp(argv[i], "-l") == 0) {
+            EepOptions.bLoadFile = true;
+
+            // Set flag to get file name
+            bGetFileName = true;
+        } else if (strcasecmp(argv[i], "-s") == 0) {
+            EepOptions.bLoadFile = false;
+
+            // Set flag to get file name
+            bGetFileName = true;
+        } else if (strcasecmp(argv[i], "-p") == 0) {
+            bGetChipType = true;
+        } else if (strcasecmp(argv[i], "-w") == 0) {
+            bGetEepWidth = true;
+        } else if (strcasecmp(argv[i], "-d") == 0) {
+            bGetDeviceNum = true;
+        } else if (strcasecmp(argv[i], "-n") == 0) {
+            bGetByteCount = true;
+        } else if (strcasecmp(argv[i], "-i") == 0) {
+            EepOptions.bIgnoreWarnings = true;
+        } else {
+            printf("ERROR: Invalid argument \'%s\'\n", argv[i]);
+            return CMD_LINE_ERR;
+        }
+
+        // Make sure next parameter exists
+        if ((i + 1) == argc) {
+            if (bGetFileName) {
+                printf("ERROR: File name not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            if (bGetChipType) {
+                printf("ERROR: PLX chip type not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            if (bGetEepWidth) {
+                printf("ERROR: EEPROM address width not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            if (bGetDeviceNum) {
+                printf("ERROR: Device number not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            if (bGetByteCount) {
+                printf("ERROR: Extra byte count not specified\n");
+                return CMD_LINE_ERR;
+            }
+        }
+    }
+
+    // Make sure required parameters were provided
+    if ((EepOptions.bLoadFile == 0xFF) || (EepOptions.FileName[0] == '\0')) {
+        printf("ERROR: EEPROM operation not specified. Use 'eep -h' for usage.\n");
+        return EXIT_FAILURE;
+    }
+
+    return EXIT_SUCCESS;
+}
+
 /* Main */
 
 int
@@ -1072,17 +1304,22 @@ main(int argc, char **argv)
   int i, j;
   char *msg;
   int NumDevices = 1;
+  int status = EXIT_SUCCESS;
 
-  if (argc == 2 && !strcmp(argv[1], "--version"))
-    {
-      puts("lspci version " PCIUTILS_VERSION);
-      return 0;
-    }
+  if (argc == 2 && !strcmp(argv[1], "--version")) {
+    puts("Adnacom version " ADNATOOL_VERSION);
+    return 0;
+  }
+
+  status = ProcessCommandLine(argc, argv);
+  if (status != EXIT_SUCCESS)
+    exit(1);
 
   pacc = pci_alloc();
   pacc->error = die;
   pci_filter_init(pacc, &filter);
 
+#ifndef ADNA
   while ((i = getopt(argc, argv, options)) != -1)
     switch (i)
       {
@@ -1166,8 +1403,10 @@ main(int argc, char **argv)
     }
   if (opt_query_all)
     pacc->id_lookup_mode |= PCI_LOOKUP_NETWORK | PCI_LOOKUP_SKIP_LOCAL;
+#endif
   verbose = 2; // very verbose by default
   pci_init(pacc);
+#ifndef ADNA
   if (opt_map_mode)
     {
       if (need_topology)
@@ -1176,19 +1415,24 @@ main(int argc, char **argv)
     }
   else
     {
+#endif // ADNA
       scan_devices();
       sort_them(&NumDevices);
+#ifndef ADNA
       if (need_topology)
 	grow_tree();
       if (opt_tree)
 	show_forest(opt_filter ? &filter : NULL);
       else
+#endif
 	show();
-    }
+    // }
 
   // Check devices exist and one was selected
-  if (NumDevices == 1)
+  if (NumDevices == 1) {
+    printf("No Adnacom device detected.\n");
     goto __exit;
+  }
 
   printf("[0] Cancel\n\n");
   do {
@@ -1202,7 +1446,7 @@ main(int argc, char **argv)
   if (j == 0)
     goto __exit;
 
-  printf("[%d] Selected\n", i);
+  printf("[%d] Selected\n", j);
 
 
 

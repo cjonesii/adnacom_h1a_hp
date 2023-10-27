@@ -115,9 +115,14 @@ cap_dsn(struct device *d, int where)
     return;
   t1 = get_conf_long(d, where + 4);
   t2 = get_conf_long(d, where + 8);
+#ifndef ADNA
   printf("Device Serial Number %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
 	t2 >> 24, (t2 >> 16) & 0xff, (t2 >> 8) & 0xff, t2 & 0xff,
 	t1 >> 24, (t1 >> 16) & 0xff, (t1 >> 8) & 0xff, t1 & 0xff);
+#else
+  printf("\tDevice Serial Number %02x-%02x-%02x-%02x\n",
+	t2 >> 24, (t2 >> 16) & 0xff, (t2 >> 8) & 0xff, t2 & 0xff);
+#endif
 }
 
 static void
@@ -1010,12 +1015,14 @@ show_ext_caps(struct device *d, int type)
 	break;
       id = header & 0xffff;
       version = (header >> 16) & 0xf;
+#ifndef ADNA
       if (id == PCI_EXT_CAP_ID_DSN) {
         printf("\tCapabilities: [%03x", where);
       if (verbose > 1)
 	printf(" v%d", version);
       printf("] ");
       }
+#endif // ADNA
       if (been_there[where]++)
 	{
 	  printf("<chain looped>\n");
