@@ -59,7 +59,7 @@ PCIINC_INS=lib/config.h lib/header.h lib/pci.h lib/types.h
 
 export
 
-all: lib/$(PCILIB) lspci lspcicaps setpci example scan_adnacom pcibars pciheader lspci.8 setpci.8 pcilib.7 pci.ids.5 update-pciids update-pciids.8 $(PCI_IDS)
+all: lib/$(PCILIB) lspci
 
 lib/$(PCILIB): $(PCIINC) force
 	$(MAKE) -C lib all
@@ -70,7 +70,6 @@ lib/config.h lib/config.mk:
 	cd lib && ./configure
 
 lspci: pcimem.o eep.o lspci.o ls-vpd.o ls-caps.o ls-caps-vendor.o ls-ecaps.o ls-kernel.o ls-tree.o ls-map.o common.o lib/$(PCILIB)
-setpci: setpci.o common.o lib/$(PCILIB)
 
 LSPCIINC=lspci.h pciutils.h $(PCIINC)
 lspci.o: lspci.c $(LSPCIINC)
@@ -80,41 +79,12 @@ ls-ecaps.o: ls-ecaps.c $(LSPCIINC)
 ls-kernel.o: ls-kernel.c $(LSPCIINC)
 ls-tree.o: ls-tree.c $(LSPCIINC)
 ls-map.o: ls-map.c $(LSPCIINC)
-
-setpci.o: setpci.c pciutils.h $(PCIINC)
 common.o: common.c pciutils.h $(PCIINC)
 
 lspci: LDLIBS+=$(LIBKMOD_LIBS)
 ls-kernel.o: CFLAGS+=$(LIBKMOD_CFLAGS)
-
-update-pciids: update-pciids.sh
-	sed <$< >$@ "s@^DEST=.*@DEST=$(IDSDIR)/$(PCI_IDS)@;s@^PCI_COMPRESSED_IDS=.*@PCI_COMPRESSED_IDS=$(PCI_COMPRESSED_IDS)@"
-	chmod +x $@
-
-# The example of use of libpci
-example: example.o lib/$(PCILIB)
-example.o: example.c $(PCIINC)
-
-# pcibars
-pcibars: pcibars.o lib/$(PCILIB)
-pcibars.o: pcibars.c $(PCIINC)
-
-# pciheader
-pciheader: pciheader.o lib/$(PCILIB)
-pciheader.o: pciheader.c $(PCIINC)
-
-# lspcicaps
-lspcicaps: lspcicaps.o lib/$(PCILIB)
-lspcicaps.o: lspcicaps.c $(PCIINC)
-
-# scan_adnacom
-# scan_adnacom: scan_adnacom.o lib/$(PCILIB)
-# scan_adnacom.o: scan_adnacom.c $(PCIINC)
-
-# lspci
 lspci: lspci.o lib/$(PCILIB)
 lspci.o: lspci.c $(PCIINC)
-
 eep.o: eep.c $(PCIINC)
 pcimem.o: pcimem.c $(PCIINC)
 
@@ -184,8 +154,5 @@ uninstall: all
 ifeq ($(SHARED),yes)
 	rm -f $(DESTDIR)$(LIBDIR)/$(PCILIB) $(DESTDIR)$(LIBDIR)/$(LIBNAME).so$(ABI_VERSION)
 endif
-
-pci.ids.gz: pci.ids
-	gzip -9n <$< >$@
 
 .PHONY: all clean distclean install install-lib uninstall force tags TAGS

@@ -26,19 +26,21 @@
 int verbose;				/* Show detailed information */
 static int opt_hex;			/* Show contents of config space as hexadecimal numbers */
 struct pci_filter filter;		/* Device filter */
-static int opt_filter;			/* Any filter was given */
-static int opt_tree;			/* Show bus tree */
 static int opt_path;			/* Show bridge path */
 static int opt_machine;			/* Generate machine-readable output */
-static int opt_map_mode;		/* Bus mapping mode enabled */
 static int opt_domains;			/* Show domain numbers (0=disabled, 1=auto-detected, 2=requested) */
 static int opt_kernel;			/* Show kernel drivers */
+#ifndef ADNA
+static int opt_filter;			/* Any filter was given */
+static int opt_tree;			/* Show bus tree */
+static int opt_map_mode;		/* Bus mapping mode enabled */
 static int opt_query_dns;		/* Query the DNS (0=disabled, 1=enabled, 2=refresh cache) */
 static int opt_query_all;		/* Query the DNS for all entries */
+#endif // ADNA
 char *opt_pcimap;			/* Override path to Linux modules.pcimap */
 
 const char program_name[] = "lspci";
-
+#ifndef ADNA
 static char options[] = "nvbxs:d:tPi:mgp:qkMDQ" GENERIC_OPTIONS ;
 
 static char help_msg[] =
@@ -84,7 +86,7 @@ static char help_msg[] =
 "PCI access options:\n"
 GENERIC_HELP
 ;
-
+#endif // ADNA
 char g_h1a_us_port_bar0[256] = "\0";
 
 struct eep_options EepOptions;
@@ -101,7 +103,7 @@ struct adnatool_pci_device {
         u16 did;
         u32 cls_rev;
 } adnatool_pci_devtbl[] = {
-#if 0
+#if 1
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
 #else
         /* for debugging purpose, put in some actual PCI devices i have 
@@ -416,7 +418,9 @@ show_terse(struct device *d)
   if (verbose || opt_kernel)
     {
       word subsys_v, subsys_d;
+#ifndef ADNA
       char ssnamebuf[256];
+#endif
 
       pci_fill_info(p, PCI_FILL_LABEL);
 
@@ -449,7 +453,7 @@ show_size(u64 x)
   }
   printf(" [size=%u%s]", (unsigned)x, suffix[i]);
 }
-
+#ifndef ADNA
 static void
 show_range(char *prefix, u64 base, u64 limit, int is_64bit)
 {
@@ -467,7 +471,7 @@ show_range(char *prefix, u64 base, u64 limit, int is_64bit)
     printf(" [disabled]");
   putchar('\n');
 }
-
+#endif
 static void
 show_bases(struct device *d, int cnt)
 {
@@ -569,7 +573,7 @@ show_bases(struct device *d, int cnt)
       putchar('\n');
     }
 }
-
+#ifndef ADNA
 static void
 show_rom(struct device *d, int reg)
 {
@@ -612,7 +616,7 @@ show_rom(struct device *d, int reg)
   show_size(len);
   putchar('\n');
 }
-
+#endif // ADNA
 static void
 show_htype0(struct device *d)
 {
@@ -719,7 +723,7 @@ show_htype1(struct device *d)
 	FLAG(brc, PCI_BRIDGE_CTL_DISCARD_TIMER_STATUS),
 	FLAG(brc, PCI_BRIDGE_CTL_DISCARD_TIMER_SERR_EN));
     }
-#endif ADNA
+#endif // ADNA
   show_caps(d, PCI_CAPABILITY_LIST);
 }
 
@@ -809,6 +813,9 @@ show_verbose(struct device *d)
   byte cache_line = get_conf_byte(d, PCI_CACHE_LINE_SIZE);
   byte bist = get_conf_byte(d, PCI_BIST);
   word status = get_conf_word(d, PCI_STATUS);
+#else
+  (void)(min_gnt);
+  (void)(irq);
 #endif
 
   show_terse(d);
@@ -1291,53 +1298,6 @@ static uint8_t EepromFileSave(void)
     return EXIT_SUCCESS;
 }
 
-void eep_console_end(void)
-{
-}
-
-int eep_getch(void)
-{
-    int            retval;
-    char           ch;
-    struct termios Tty_Save;
-    struct termios Tty_New;
-
-
-    // Make sure all output data is flushed
-    fflush( stdout );
-
-    // Get current terminal attributes
-    tcgetattr( STDIN_FILENO, &Tty_Save );
-
-    // Copy attributes
-    Tty_New = Tty_Save;
-
-    // Disable canonical mode (handles special characters)
-    Tty_New.c_lflag &= ~ICANON;
-
-    // Disable character echo
-    Tty_New.c_lflag &= ~ECHO;
-
-    // Set timeouts
-    Tty_New.c_cc[VMIN]  = 1;   // Minimum chars to wait for
-    Tty_New.c_cc[VTIME] = 1;   // Minimum wait time
-
-    // Set new terminal attributes
-    if (tcsetattr( STDIN_FILENO, TCSANOW, &Tty_New ) != 0)
-        return 0;
-
-    // Get a single character from stdin
-    retval = read( STDIN_FILENO, &ch, 1 ); 
-
-    // Restore old settings
-    tcsetattr( STDIN_FILENO, TCSANOW, &Tty_Save );
-
-    if (retval > 0)
-        return (int)ch;
-
-    return 0;
-}
-
 static uint8_t EepFile(void)
 {
     printf("Function: %s\n", __func__);
@@ -1418,6 +1378,7 @@ static int eep_process(int j)
             }
         }
     }
+    return status;
 }
 
 static void DisplayHelp(void)
@@ -1723,6 +1684,9 @@ main(int argc, char **argv)
     }
   if (opt_query_all)
     pacc->id_lookup_mode |= PCI_LOOKUP_NETWORK | PCI_LOOKUP_SKIP_LOCAL;
+#else
+  (void)(msg);
+  (void)(i);
 #endif
   verbose = 2; // very verbose by default
   pci_init(pacc);

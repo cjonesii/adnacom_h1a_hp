@@ -42,16 +42,19 @@
 #include "eep.h"
 
 extern char g_h1a_us_port_bar0[256];
+extern struct eep_options EepOptions;
 
 int pcimem(int access, uint32_t reg, uint32_t data)
 {
-    printf("Function: %s Access: %s\n", __func__, access ? "READ" : "WRITE");
+    if (EepOptions.bVerbose) {
+        printf("Function: %s Access: %s\n", __func__, access ? "READ" : "WRITE");
+    }
 	int fd = 0xFF;
 	void *map_base, *virt_addr;
 	uint64_t read_result, writeval, prev_read_result = 0;
 	off_t target, target_base;
 	int items_count = 1;
-	int verbose = 1;
+	// int verbose = 1;
 	int read_result_dupped = 0;
 	int type_width = 4;
 	int i;
@@ -75,15 +78,17 @@ int pcimem(int access, uint32_t reg, uint32_t data)
         virt_addr = map_base + target + i*type_width - target_base;
         read_result = *((uint32_t *) virt_addr);
 
-        if (verbose)
+        if (EepOptions.bVerbose)
             printf("Value at offset 0x%X (%p): 0x%0*lX\n", (int) target + i*type_width, virt_addr, type_width*2, read_result);
         else {
             if (read_result != prev_read_result || i == 0) {
-                    printf("0x%04X: 0x%0*lX\n", (int)(target + i*type_width), type_width*2, read_result);
+                    if (EepOptions.bVerbose)
+                        printf("0x%04X: 0x%0*lX\n", (int)(target + i*type_width), type_width*2, read_result);
                     read_result_dupped = 0;
                 } else {
                     if (!read_result_dupped) {
-                        printf("...\n");
+                        if (EepOptions.bVerbose)
+                            printf("...\n");
                     }
                     read_result_dupped = 1;
             }
@@ -96,8 +101,9 @@ int pcimem(int access, uint32_t reg, uint32_t data)
 		writeval = (uint64_t)data;
         *((uint32_t *) virt_addr) = writeval;
         read_result = *((uint32_t *) virt_addr);
-		printf("Written 0x%0*lX; readback 0x%0*lX\n", type_width*2,
-		       writeval, type_width*2, read_result);
+        if (EepOptions.bVerbose)
+		    printf("Written 0x%0*lX; readback 0x%0*lX\n", type_width*2,
+		            writeval, type_width*2, read_result);
 		fflush(stdout);
 	}
 

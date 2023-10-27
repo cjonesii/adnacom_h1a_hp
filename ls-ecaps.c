@@ -8,9 +8,9 @@
 
 #include <stdio.h>
 #include <string.h>
-
 #include "lspci.h"
 
+#ifndef ADNA
 static void
 cap_tph(struct device *d, int where)
 {
@@ -106,7 +106,7 @@ cap_sec(struct device *d, int where)
     printf("0");
   printf("\n");
 }
-
+#endif // ADNA
 static void
 cap_dsn(struct device *d, int where)
 {
@@ -114,6 +114,9 @@ cap_dsn(struct device *d, int where)
   if (!config_fetch(d, where + 4, 8))
     return;
   t1 = get_conf_long(d, where + 4);
+#ifdef ADNA
+  (void)(t1);
+#endif // ADNA
   t2 = get_conf_long(d, where + 8);
 #ifndef ADNA
   printf("Device Serial Number %02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x\n",
@@ -124,7 +127,7 @@ cap_dsn(struct device *d, int where)
 	t2 >> 24, (t2 >> 16) & 0xff, (t2 >> 8) & 0xff, t2 & 0xff);
 #endif
 }
-
+#ifndef ADNA
 static void
 cap_aer(struct device *d, int where, int type)
 {
@@ -996,7 +999,7 @@ cap_rebar(struct device *d, int where, int virtual)
       printf("\n");
     }
 }
-
+#endif // ADNA
 void
 show_ext_caps(struct device *d, int type)
 {
@@ -1014,14 +1017,17 @@ show_ext_caps(struct device *d, int type)
       if (!header)
 	break;
       id = header & 0xffff;
-      version = (header >> 16) & 0xf;
 #ifndef ADNA
+      version = (header >> 16) & 0xf;
       if (id == PCI_EXT_CAP_ID_DSN) {
         printf("\tCapabilities: [%03x", where);
       if (verbose > 1)
 	printf(" v%d", version);
       printf("] ");
       }
+#else
+  (void)(version);
+  (void)(type);
 #endif // ADNA
       if (been_there[where]++)
 	{

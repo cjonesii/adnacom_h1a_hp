@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "lspci.h"
-
+#ifndef ADNA
 static void
 cap_pm(struct device *d, int where, int cap)
 {
@@ -210,7 +210,7 @@ cap_pcix(struct device *d, int where)
       break;
     }
 }
-
+#endif // ADNA
 static inline char *
 ht_link_width(unsigned width)
 {
@@ -225,7 +225,7 @@ ht_link_freq(unsigned freq)
 				    "1.4GHz", "1.6GHz", "[a]", "[b]", "[c]", "[d]", "[e]", "Vend" };
   return freqs[freq];
 }
-
+#ifndef ADNA
 static void
 cap_ht_pri(struct device *d, int where, int cmd)
 {
@@ -648,20 +648,20 @@ cap_msi(struct device *d, int where, int cap)
       printf("\t\tMasking: %08x  Pending: %08x\n", mask, pending);
     }
 }
-
+#endif // ADNA
 static int exp_downstream_port(int type)
 {
   return type == PCI_EXP_TYPE_ROOT_PORT ||
 	 type == PCI_EXP_TYPE_DOWNSTREAM ||
 	 type == PCI_EXP_TYPE_PCIE_BRIDGE;	/* PCI/PCI-X to PCIe Bridge */
 }
-
+#ifndef ADNA
 static float power_limit(int value, int scale)
 {
   static const float scales[4] = { 1.0, 0.1, 0.01, 0.001 };
   return value * scales[scale];
 }
-
+#endif // ADNA
 static const char *latency_l0s(int value)
 {
   static const char *latencies[] = { "<64ns", "<128ns", "<256ns", "<512ns", "<1us", "<2us", "<4us", "unlimited" };
@@ -673,7 +673,7 @@ static const char *latency_l1(int value)
   static const char *latencies[] = { "<1us", "<2us", "<4us", "<8us", "<16us", "<32us", "<64us", "unlimited" };
   return latencies[value];
 }
-
+#ifndef ADNA
 static void cap_express_dev(struct device *d, int where, int type)
 {
   u32 t;
@@ -736,7 +736,7 @@ static void cap_express_dev(struct device *d, int where, int type)
 	FLAG(w, PCI_EXP_DEVSTA_AUXPD),
 	FLAG(w, PCI_EXP_DEVSTA_TRPND));
 }
-
+#endif // ADNA
 static char *link_speed(int speed)
 {
   switch (speed)
@@ -792,6 +792,9 @@ static const char *aspm_enabled(int code)
 
 static void cap_express_link(struct device *d, int where, int type)
 {
+#ifdef ADNA
+  (void)(type);
+#endif
   u32 t, aspm, cap_speed, cap_width, sta_speed, sta_width;
   u16 w;
 
@@ -856,15 +859,15 @@ static void cap_express_link(struct device *d, int where, int type)
 	FLAG(w, PCI_EXP_LNKSTA_BWMGMT),
 	FLAG(w, PCI_EXP_LNKSTA_AUTBW));
 #endif
-  printf("LinkActive %s\n", FLAG(w, PCI_EXP_LNKSTA_DL_ACT) == "+" ? "Yes" : "No");
+  printf("LinkActive %s\n", FLAG(w, PCI_EXP_LNKSTA_DL_ACT) == '+' ? "Yes" : "No");
 }
-
+#ifndef ADNA
 static const char *indicator(int code)
 {
   static const char *names[] = { "Unknown", "On", "Blink", "Off" };
   return names[code];
 }
-
+#endif // ADNA
 static void cap_express_slot(struct device *d, int where)
 {
   u32 t;
@@ -886,7 +889,7 @@ static void cap_express_slot(struct device *d, int where)
 	FLAG(t, PCI_EXP_SLTCAP_INTERLOCK),
 	FLAG(t, PCI_EXP_SLTCAP_NOCMDCOMP));
 #endif // ADNA
-printf("\t  SltCap: Hotplug %s\n", FLAG(t, PCI_EXP_SLTCAP_HPC) == "+" ? "Capable" : "Not Capable"); // Custom
+printf("\t  SltCap: Hotplug %s\n", FLAG(t, PCI_EXP_SLTCAP_HPC) == '+' ? "Capable" : "Not Capable"); // Custom
   w = get_conf_word(d, where + PCI_EXP_SLTCTL);
 #ifndef ADNA
   printf("\t\tSltCtl:\tEnable: AttnBtn%c PwrFlt%c MRL%c PresDet%c CmdCplt%c HPIrq%c LinkChg%c\n",
@@ -916,6 +919,8 @@ printf("\t  SltCap: Hotplug %s\n", FLAG(t, PCI_EXP_SLTCAP_HPC) == "+" ? "Capable
 	FLAG(w, PCI_EXP_SLTSTA_MRLS),
 	FLAG(w, PCI_EXP_SLTSTA_PRSD),
 	FLAG(w, PCI_EXP_SLTSTA_LLCHG));
+#else
+  (void)(w);
 #endif // ADNA
 }
 
@@ -1435,7 +1440,7 @@ cap_express(struct device *d, int where, int cap)
     cap_express_slot2(d, where);
   return type;
 }
-
+#ifndef ADNA
 static void
 cap_msix(struct device *d, int where, int cap)
 {
@@ -1685,7 +1690,7 @@ static void cap_ea(struct device *d, int where, int cap)
     entry_base += 4 + 4 * es;
   }
 }
-
+#endif // ADNA
 void
 show_caps(struct device *d, int where)
 {
@@ -1707,10 +1712,11 @@ show_caps(struct device *d, int where)
 	      break;
 	    }
 	  id = get_conf_byte(d, where + PCI_CAP_LIST_ID);
-      if (PCI_CAP_ID_EXP == id)
+      if (PCI_CAP_ID_EXP == id) {
         printf("\tCapabilities: ");
-        next = get_conf_byte(d, where + PCI_CAP_LIST_NEXT) & ~3;
-        cap = get_conf_word(d, where + PCI_CAP_FLAGS);
+      }
+      next = get_conf_byte(d, where + PCI_CAP_LIST_NEXT) & ~3;
+      cap = get_conf_word(d, where + PCI_CAP_FLAGS);
       if (PCI_CAP_ID_EXP == id)
         printf("[%02x] ", where);
 
