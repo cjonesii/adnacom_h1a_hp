@@ -19,7 +19,7 @@ VERBOSE=0
 LOAD=0
 SAVE=0
 # Set path to application executable
-eep_program=$H1A_DIR/src/eep
+eep_program=$H1A_DIR/adna
 
 # Help text
 usage () {
@@ -72,9 +72,9 @@ check_eep_program() {
 get_eeprom_data() {
     cd $H1A_DIR
     if [ $VERBOSE = 1 ]; then
-        sudo ./src/adna -s "$tmp1_eeprom" -v
+        sudo ./adna -s $tmp1_eeprom -v
     else
-        sudo ./src/adna -s "$tmp1_eeprom"
+        sudo ./adna -s $tmp1_eeprom
     fi
 }
 
@@ -82,9 +82,9 @@ get_eeprom_data() {
 read_eeprom_data_postop() {
     cd $H1A_DIR
     if [ $VERBOSE = 1 ]; then
-        sudo ./src/adna -s "$tmp2_eeprom" -v
+        sudo ./adna -s $tmp2_eeprom -v
     else
-        sudo ./src/adna -s "$tmp2_eeprom"
+        sudo ./adna -s $tmp2_eeprom
     fi
 }
 
@@ -174,7 +174,7 @@ find_sn() {
 
     # Check if the extracted binary file exist
     if [[ ! -f "$tmp1_eeprom" ]]; then
-        echo "ERROR: File '$tmp1_eeprom' not found."
+        # echo "ERROR: File '$tmp1_eeprom' not found."
         exit 1
     fi
 
@@ -208,7 +208,7 @@ update_sn() {
 
     # Check if the new binary file and serial number file exist
     if [[ ! -f "$tmp4_file" ]]; then
-        echo "ERROR: Binary file '$tmp4_file' not found."
+        # echo "ERROR: Binary file '$tmp4_file' not found."
         exit 1
     fi
     if [[ ! -f "$tmp3_sn" ]]; then
@@ -235,16 +235,18 @@ update_sn() {
 
 # Burn binary file to EEPROM
 write_eeprom_data() {
+    echo "Writing $FILENAME to EEPROM"
     cd $H1A_DIR
     if [ $VERBOSE = 1 ]; then
-        sudo ./src/adna -l "$tmp4_file" -v
+        sudo ./adna -l "$tmp4_file" -v
     else
-        sudo ./src/adna -l "$tmp4_file"
+        sudo ./adna -l "$tmp4_file"
     fi
 }
 
 # Diff read from written EEPROM data 
 verify_data() {
+    echo "Verifying written binary file"
     read_eeprom_data_postop
     diff $tmp4_file $tmp2_eeprom
     if [[ `echo $?` -ne "0" ]]; then
@@ -269,7 +271,7 @@ check_prerequisites
 
 [ $# -eq 0 ] && usage && exit 1
 
-ARGS=$(getopt -a -o l:s:n:v:h -- "$@")
+ARGS=$(getopt -a -o l:s:nh:v -- "$@")
 [ $? -ne 0 ] && usage
 eval set -- "${ARGS}"
 
@@ -283,7 +285,8 @@ do
     -n)
         SERIALNUMBER=$2; echo "SERIAL NUMBER: $SERIALNUMBER"; shift;;
     -v)
-        VERBOSE=$2; echo "VERBOSE: $VERBOSE"; shift;;
+        VERBOSE=1; echo "VERBOSE: TRUE"; shift
+        break;;
     -h)
         usage;;
     --)
@@ -299,12 +302,11 @@ if [ "${FILENAME}1" = "1" ]; then
     exit 1
 fi
 
-if [ ! "${VERBOSE}" = "true" ]; then
-    echo "-v only accepts true as parameter"
-    exit 1
-fi
-
-if [ LOAD = 1 ]; then
+if [ $LOAD = 1 ]; then
+    if [[ ! -f "$FILENAME" ]]; then
+        echo "$FILENAME not found"
+        exit 1
+    fi
     cp $FILENAME $tmp4_file
 fi
 
@@ -335,34 +337,37 @@ if [[ $SERIALNUMBER ]]; then
     input_to_bin
 else
     get_eeprom_data
-    if [[ `echo $?` -ne "0" ]]; then
-        echo "Error reading H1A EEPROM. Exiting"
+    if [[ `echo $?` -ne '0' ]]; then
+        # echo "Error reading H1A EEPROM. Exiting"
         exit 1
     fi
 
     if [ $SAVE = 1 ]; then
-        cp $tmp1_eeprom $FILENAME
+        if [[ -f "$tmp1_eeprom" ]]; then
+            echo "Saving EEPROM to $FILENAME"
+            cp $tmp1_eeprom $FILENAME
+        fi
         cleanup
         exit
     fi
 
     find_sn
-    if [[ `echo $?` -ne "0" ]]; then
+    if [[ `echo $?` -ne 0 ]]; then
         echo "Serial Number in H1A EEPROM is missing. Exiting"
         exit 1
     fi
 fi
 
 update_sn
-if [[ `echo $?` -ne "0" ]]; then
+if [[ `echo $?` -ne 0 ]]; then
     echo "Binary File Error. Exiting"
     exit
 fi
 
 write_eeprom_data
-if [[ `echo $?` -ne "0" ]]; then
-    echo "EEPROM Write Error. Exiting"
-    exit
+if [[ `echo $?` -ne 0 ]]; then
+    # echo "EEPROM Write Error. Exiting"
+    exit 1
 fi
 
 verify_data
