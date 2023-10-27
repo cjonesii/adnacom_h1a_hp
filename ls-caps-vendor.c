@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lspci.h"
+#include "adna.h"
 
 static int
 show_vendor_caps_virtio(struct device *d, int where, int cap)

@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "lspci.h"
+#include "adna.h"
 
 struct bus_bridge {
   struct bus_bridge *next;

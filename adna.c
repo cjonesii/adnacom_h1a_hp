@@ -10,7 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include "lspci.h"
+#include "adna.h"
 #include "pcimem.h"
 #include <stdbool.h>
 #include "eep.h"
@@ -39,12 +39,12 @@ static int opt_query_all;		/* Query the DNS for all entries */
 #endif // ADNA
 char *opt_pcimap;			/* Override path to Linux modules.pcimap */
 
-const char program_name[] = "lspci";
+const char program_name[] = "adna";
 #ifndef ADNA
 static char options[] = "nvbxs:d:tPi:mgp:qkMDQ" GENERIC_OPTIONS ;
 
 static char help_msg[] =
-"Usage: lspci [<switches>]\n"
+"Usage: adna [<switches>]\n"
 "\n"
 "Basic display modes:\n"
 "-mm\t\tProduce machine-readable output (single -m for an obsolete format)\n"
@@ -203,7 +203,7 @@ scan_device(struct pci_dev *p)
   memset(d->present, 1, 64);
   if (!pci_read_block(p, 0, d->config, 64))
     {
-      fprintf(stderr, "lspci: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
+      fprintf(stderr, "adna: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
 	      p->domain, p->bus, p->dev, p->func);
       seen_errors++;
       return NULL;

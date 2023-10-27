@@ -10,7 +10,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lspci.h"
+#include "adna.h"
 
 struct bridge host_bridge = { NULL, NULL, NULL, NULL, 0, ~0, 0, ~0, NULL };
 

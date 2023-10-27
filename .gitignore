@@ -2,15 +2,7 @@
 *.o
 *.so
 *.[0-9]
-lspci
-setpci
-example
-update-pciids
-pci.ids.gz
-lspcicaps
-pcibars
-pciheader
-scan_adnacom
+adna
 .vscode/
 .settings/
 .project

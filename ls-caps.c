@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lspci.h"
+#include "adna.h"
 #ifndef ADNA
 static void
 cap_pm(struct device *d, int where, int cap)

@@ -10,7 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "lspci.h"
+#include "adna.h"
 
 #ifdef PCI_OS_LINUX
 
@@ -32,14 +32,14 @@ show_kernel_init(void)
   kmod_ctx = kmod_new(NULL, NULL);
   if (!kmod_ctx)
     {
-      fprintf(stderr, "lspci: Unable to initialize libkmod context\n");
+      fprintf(stderr, "adna: Unable to initialize libkmod context\n");
       goto failed;
     }
 
   int err;
   if ((err = kmod_load_resources(kmod_ctx)) < 0)
     {
-      fprintf(stderr, "lspci: Unable to load libkmod resources: error %d\n", err);
+      fprintf(stderr, "adna: Unable to load libkmod resources: error %d\n", err);
       goto failed;
     }
 
@@ -77,7 +77,7 @@ static const char *next_module(struct device *d)
       int err = kmod_module_new_from_lookup(kmod_ctx, d->dev->module_alias, &klist);
       if (err < 0)
 	{
-	  fprintf(stderr, "lspci: libkmod lookup failed: error %d\n", err);
+	  fprintf(stderr, "adna: libkmod lookup failed: error %d\n", err);
 	  return NULL;
 	}
       kcurrent = klist;

@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "lspci.h"
+#include "adna.h"
 
 extern struct eep_options EepOptions;
 

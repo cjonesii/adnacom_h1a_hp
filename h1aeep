@@ -13,27 +13,38 @@ tmp1_eeprom="tmp1.bin"
 tmp2_eeprom="tmp2.bin"
 tmp3_sn="tmp3.bin"
 tmp4_file="tmp4.bin"
+# Log level
+VERBOSE=0
+# File actions
+LOAD=0
+SAVE=0
 # Set path to application executable
 eep_program=$H1A_DIR/src/eep
 
 # Help text
 usage () {
 cat <<EOF
-Usage: sudo ./h1aeep -f <filename>
-   or  sudo ./h1aeep -f <filename> -s <serial number>
+
+Usage: sudo ./h1aeep -s <filename>
+   or  sudo ./h1aeep -l <filename> -n <serial number> -v true
 
 Where:
- -f, binary file that contains the EEPROM configuration
- -s, a 4 byte hex number representing the device serial number
+ -s, save EEPROM into <filename> binary file
+ -l, load <filename> binary file into EEPROM
+ -n, a 4 byte hex number for <serial number>
+ -v, to print detailed logs, set this to true
 
 Examples:
-sudo ./h1aeep -f H1A-GEN2-LR-HP.bin
-sudo ./h1aeep -f H1A-GEN2-LR-HP.bin -s c9810844
+sudo ./h1aeep -l H1A-GEN2-LR-HP.bin
+sudo ./h1aeep -l H1A-GEN2-LR-HP.bin -s c9810844
+sudo ./h1aeep -l H1A-GEN2-LR-HP.bin -s c9810844 -v true
+sudo ./h1aeep -s EEPROM.bin
 
 Notes:
 1. The tool only targets H1A device currently.
-2. If only the binary file is provided, the tool will try to use the serial number 
-   from the H1A device. If no serial number is found, the program will exit.
+2. If only the binary file is provided, the tool will use the serial number 
+   from the EEPROM of the H1A device. Program exits if no serial number is found.
+3. The program exits if serial number is provided when saving the EEPROM to file.
 
 EOF
    exit
@@ -60,13 +71,21 @@ check_eep_program() {
 # Read EEPROM
 get_eeprom_data() {
     cd $H1A_DIR
-    sudo ./src/eep -s "$tmp1_eeprom"
+    if [ $VERBOSE = 1 ]; then
+        sudo ./src/adna -s "$tmp1_eeprom" -v
+    else
+        sudo ./src/adna -s "$tmp1_eeprom"
+    fi
 }
 
 # Read EEPROM after writing binary file
 read_eeprom_data_postop() {
     cd $H1A_DIR
-    sudo ./src/eep -s "$tmp2_eeprom"
+    if [ $VERBOSE = 1 ]; then
+        sudo ./src/adna -s "$tmp2_eeprom" -v
+    else
+        sudo ./src/adna -s "$tmp2_eeprom"
+    fi
 }
 
 # Function to convert 4 bytes (32 bits) of hexadecimal string to little-endian binary
@@ -217,7 +236,11 @@ update_sn() {
 # Burn binary file to EEPROM
 write_eeprom_data() {
     cd $H1A_DIR
-    sudo ./src/eep -l "$tmp4_file"
+    if [ $VERBOSE = 1 ]; then
+        sudo ./src/adna -l "$tmp4_file" -v
+    else
+        sudo ./src/adna -l "$tmp4_file"
+    fi
 }
 
 # Diff read from written EEPROM data 
@@ -239,22 +262,28 @@ cleanup() {
     sudo rm -rf tmp4.bin
 }
 
-# Main routine
+# -----------------
+#   Main routine
+# ----------------
 check_prerequisites
 
 [ $# -eq 0 ] && usage && exit 1
 
-ARGS=$(getopt -a -o f:s:h -- "$@")
+ARGS=$(getopt -a -o l:s:n:v:h -- "$@")
 [ $? -ne 0 ] && usage
 eval set -- "${ARGS}"
 
 while true
 do
     case "$1" in
-    -f)
-        FILENAME=$2; echo "FILENAME: $FILENAME"; shift;;
+    -l)
+        FILENAME=$2; LOAD=1; echo "FILENAME: $FILENAME"; shift;;
     -s)
+        FILENAME=$2; SAVE=1; echo "FILENAME: $FILENAME"; shift;;
+    -n)
         SERIALNUMBER=$2; echo "SERIAL NUMBER: $SERIALNUMBER"; shift;;
+    -v)
+        VERBOSE=$2; echo "VERBOSE: $VERBOSE"; shift;;
     -h)
         usage;;
     --)
@@ -268,13 +297,26 @@ if [ "${FILENAME}1" = "1" ]; then
     echo "Binary file is required"
     usage
     exit 1
-else
+fi
+
+if [ ! "${VERBOSE}" = "true" ]; then
+    echo "-v only accepts true as parameter"
+    exit 1
+fi
+
+if [ LOAD = 1 ]; then
     cp $FILENAME $tmp4_file
 fi
 
 check_eep_program
 
 if [[ $SERIALNUMBER ]]; then
+
+    if [ $SAVE = 1 ]; then
+        echo "ERROR: Serial number is not required when saving EEPROM"
+        exit 1
+    fi
+
     # Check if the input is a valid hexadecimal value and its length is even (byte-aligned)
     if ! [[ "$SERIALNUMBER" =~ ^[0-9a-fA-F]+$ ]]; then
         echo "ERROR: Invalid hexadecimal input. It should be a valid hexadecimal value (e.g., 0011AABB)."
@@ -297,6 +339,13 @@ else
         echo "Error reading H1A EEPROM. Exiting"
         exit 1
     fi
+
+    if [ $SAVE = 1 ]; then
+        cp $tmp1_eeprom $FILENAME
+        cleanup
+        exit
+    fi
+
     find_sn
     if [[ `echo $?` -ne "0" ]]; then
         echo "Serial Number in H1A EEPROM is missing. Exiting"

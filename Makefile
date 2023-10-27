@@ -59,7 +59,7 @@ PCIINC_INS=lib/config.h lib/header.h lib/pci.h lib/types.h
 
 export
 
-all: lib/$(PCILIB) lspci
+all: lib/$(PCILIB) adna
 
 lib/$(PCILIB): $(PCIINC) force
 	$(MAKE) -C lib all
@@ -69,10 +69,10 @@ force:
 lib/config.h lib/config.mk:
 	cd lib && ./configure
 
-lspci: pcimem.o eep.o lspci.o ls-vpd.o ls-caps.o ls-caps-vendor.o ls-ecaps.o ls-kernel.o ls-tree.o ls-map.o common.o lib/$(PCILIB)
+adna: pcimem.o eep.o adna.o ls-vpd.o ls-caps.o ls-caps-vendor.o ls-ecaps.o ls-kernel.o ls-tree.o ls-map.o common.o lib/$(PCILIB)
 
-LSPCIINC=lspci.h pciutils.h $(PCIINC)
-lspci.o: lspci.c $(LSPCIINC)
+LSPCIINC=adna.h pciutils.h $(PCIINC)
+adna.o: adna.c $(LSPCIINC)
 ls-vpd.o: ls-vpd.c $(LSPCIINC)
 ls-caps.o: ls-caps.c $(LSPCIINC)
 ls-ecaps.o: ls-ecaps.c $(LSPCIINC)
@@ -81,10 +81,10 @@ ls-tree.o: ls-tree.c $(LSPCIINC)
 ls-map.o: ls-map.c $(LSPCIINC)
 common.o: common.c pciutils.h $(PCIINC)
 
-lspci: LDLIBS+=$(LIBKMOD_LIBS)
+adna: LDLIBS+=$(LIBKMOD_LIBS)
 ls-kernel.o: CFLAGS+=$(LIBKMOD_CFLAGS)
-lspci: lspci.o lib/$(PCILIB)
-lspci.o: lspci.c $(PCIINC)
+adna: adna.o lib/$(PCILIB)
+adna.o: adna.c $(PCIINC)
 eep.o: eep.c $(PCIINC)
 pcimem.o: pcimem.c $(PCIINC)
 
@@ -104,20 +104,15 @@ TAGS:
 
 clean:
 	rm -f `find . -name "*~" -o -name "*.[oa]" -o -name "\#*\#" -o -name TAGS -o -name core -o -name "*.orig"`
-	rm -f update-pciids lspci setpci example lib/config.* *.[578] pci.ids.gz lib/*.pc lib/*.so lib/*.so.* tags
+	rm -f adna lib/config.* *.[578] lib/*.pc lib/*.so lib/*.so.* tags
 	rm -rf maint/dist
 
 distclean: clean
 
 install: all
 # -c is ignored on Linux, but required on FreeBSD
-	$(DIRINSTALL) -m 755 $(DESTDIR)$(SBINDIR) $(DESTDIR)$(IDSDIR) $(DESTDIR)$(MANDIR)/man8 $(DESTDIR)$(MANDIR)/man7 $(DESTDIR)/$(MANDIR)/man5
-	$(INSTALL) -c -m 755 $(STRIP) lspci setpci $(DESTDIR)$(SBINDIR)
-	$(INSTALL) -c -m 755 update-pciids $(DESTDIR)$(SBINDIR)
-	$(INSTALL) -c -m 644 $(PCI_IDS) $(DESTDIR)$(IDSDIR)
-	$(INSTALL) -c -m 644 lspci.8 setpci.8 update-pciids.8 $(DESTDIR)$(MANDIR)/man8
-	$(INSTALL) -c -m 644 pcilib.7 $(DESTDIR)$(MANDIR)/man7
-	$(INSTALL) -c -m 644 pci.ids.5 $(DESTDIR)$(MANDIR)/man5
+	$(INSTALL) -c -m 755 $(STRIP) adna $(DESTDIR)$(SBINDIR)
+
 ifeq ($(SHARED),yes)
 ifeq ($(LIBEXT),dylib)
 	ln -sf $(PCILIB) $(DESTDIR)$(LIBDIR)/$(LIBNAME)$(ABI_VERSION).$(LIBEXT)
@@ -147,10 +142,7 @@ endif
 endif
 
 uninstall: all
-	rm -f $(DESTDIR)$(SBINDIR)/lspci $(DESTDIR)$(SBINDIR)/setpci $(DESTDIR)$(SBINDIR)/update-pciids
-	rm -f $(DESTDIR)$(IDSDIR)/$(PCI_IDS)
-	rm -f $(DESTDIR)$(MANDIR)/man8/lspci.8 $(DESTDIR)$(MANDIR)/man8/setpci.8 $(DESTDIR)$(MANDIR)/man8/update-pciids.8
-	rm -f $(DESTDIR)$(MANDIR)/man7/pcilib.7
+	rm -f $(DESTDIR)$(SBINDIR)/adna $(DESTDIR)$(SBINDIR)/setpci $(DESTDIR)$(SBINDIR)/update-pciids
 ifeq ($(SHARED),yes)
 	rm -f $(DESTDIR)$(LIBDIR)/$(PCILIB) $(DESTDIR)$(LIBDIR)/$(LIBNAME).so$(ABI_VERSION)
 endif

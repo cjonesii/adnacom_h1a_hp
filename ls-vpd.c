@@ -12,7 +12,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "lspci.h"
+#include "adna.h"
 
 /*
  *  The list of all known VPD items and their formats.

@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "lspci.h"
+#include "adna.h"
 
 #ifndef ADNA
 static void

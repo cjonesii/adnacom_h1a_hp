@@ -35,7 +35,7 @@
 #include <sys/types.h>
 #include <sys/mman.h>
 /* PCIe Config */
-#include "lspci.h"
+#include "adna.h"
 #include "lib/pci.h"
 /* Application */
 #include "pcimem.h"
