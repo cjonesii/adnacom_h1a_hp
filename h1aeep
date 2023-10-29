@@ -18,6 +18,7 @@ VERBOSE=0
 # File actions
 LOAD=0
 SAVE=0
+LIST=0
 # Set path to application executable
 eep_program=$H1A_DIR/adna
 
@@ -26,18 +27,19 @@ usage () {
 cat <<EOF
 
 Usage: sudo ./h1aeep -s <filename>
-   or  sudo ./h1aeep -l <filename> -n <serial number> -v true
+   or  sudo ./h1aeep -w <filename> -n <serial number> -v true
 
 Where:
  -s, save EEPROM into <filename> binary file
- -l, load <filename> binary file into EEPROM
+ -w, write <filename> binary file into EEPROM
  -n, a 4 byte hex number for <serial number>
+ -l, list Adnacom devices
  -v, to print detailed logs, set this to true
 
 Examples:
-sudo ./h1aeep -l H1A-GEN2-LR-HP.bin
-sudo ./h1aeep -l H1A-GEN2-LR-HP.bin -s c9810844
-sudo ./h1aeep -l H1A-GEN2-LR-HP.bin -s c9810844 -v true
+sudo ./h1aeep -w H1A-GEN2-LR-HP.bin
+sudo ./h1aeep -w H1A-GEN2-LR-HP.bin -n c9810844
+sudo ./h1aeep -w H1A-GEN2-LR-HP.bin -n c9810844 -v true
 sudo ./h1aeep -s EEPROM.bin
 
 Notes:
@@ -48,6 +50,12 @@ Notes:
 
 EOF
    exit
+}
+
+# List devices
+list_device() {
+    cd $H1A_DIR
+    sudo ./adna -e
 }
 
 # Check all script prerequisites
@@ -271,7 +279,7 @@ check_prerequisites
 
 [ $# -eq 0 ] && usage && exit 1
 
-ARGS=$(getopt -a -o l:s:nh:v -- "$@")
+ARGS=$(getopt -a -o l:s:neh:v -- "$@")
 [ $? -ne 0 ] && usage
 eval set -- "${ARGS}"
 
@@ -284,6 +292,9 @@ do
         FILENAME=$2; SAVE=1; echo "FILENAME: $FILENAME"; shift;;
     -n)
         SERIALNUMBER=$2; echo "SERIAL NUMBER: $SERIALNUMBER"; shift;;
+    -e)
+        LIST=1; shift
+        break;;
     -v)
         VERBOSE=1; echo "VERBOSE: TRUE"; shift
         break;;
@@ -296,10 +307,9 @@ do
 shift
 done
 
-if [ "${FILENAME}1" = "1" ]; then
-    echo "Binary file is required"
-    usage
-    exit 1
+if [ $LIST = 1 ]; then
+    list_device
+    exit
 fi
 
 if [ $LOAD = 1 ]; then

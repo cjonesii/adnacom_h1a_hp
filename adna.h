@@ -62,6 +62,7 @@ struct eep_options {
     u16     LimitPlxChip;
     u8      LimitPlxRevision;
     u16     ExtraBytes;
+    bool bListOnly;
 };
 
 extern struct device *first_dev;

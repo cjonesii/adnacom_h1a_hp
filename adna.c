@@ -103,7 +103,7 @@ struct adnatool_pci_device {
         u16 did;
         u32 cls_rev;
 } adnatool_pci_devtbl[] = {
-#if 1
+#if 0
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
 #else
         /* for debugging purpose, put in some actual PCI devices i have 
@@ -191,8 +191,8 @@ scan_device(struct pci_dev *p)
   if (!pcidev_is_adnacom(p))
     return NULL;
 
-  if (!pci_is_upstream(p))
-    return NULL;
+//   if (!pci_is_upstream(p))
+//     return NULL;
 
   d = xmalloc(sizeof(struct device));
   memset(d, 0, sizeof(*d));
@@ -322,8 +322,12 @@ sort_them(int *NumDevices)
     }
   *last_dev = NULL;
   int i=1;
-  for (d=first_dev; d; d=d->next)
-    d->NumDevice = i++;
+  for (d=first_dev; d; d=d->next) {
+      if (pci_is_upstream(d->dev))
+        d->NumDevice = i++;
+      else
+        d->NumDevice = 0;
+  }
   *NumDevices = i;
 }
 
@@ -349,7 +353,11 @@ show_slot_path(struct device *d)
 	  return;
 	}
     }
-  printf("[%d] %02x:%02x.%d", d->NumDevice, p->bus, p->dev, p->func);
+  if (d->NumDevice)
+    printf("[%d] ", d->NumDevice);
+  else
+    printf("     ");
+  printf("%02x:%02x.%d", p->bus, p->dev, p->func);
 }
 
 static void
@@ -1534,6 +1542,8 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
             bGetByteCount = true;
         } else if (strcasecmp(argv[i], "-i") == 0) {
             EepOptions.bIgnoreWarnings = true;
+        } else if (strcasecmp(argv[i], "-e") == 0) {
+            EepOptions.bListOnly = true;
         } else {
             printf("ERROR: Invalid argument \'%s\'\n", argv[i]);
             return CMD_LINE_ERR;
@@ -1569,10 +1579,12 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
     }
 
     // Make sure required parameters were provided
-    if ((EepOptions.bLoadFile == 0xFF) || (EepOptions.FileName[0] == '\0')) {
-        printf("ERROR: EEPROM operation not specified. Use 'eep -h' for usage.\n");
+    if (EepOptions.bListOnly  == true) {
+        // Allow list only
+    } else if ((EepOptions.bLoadFile == 0xFF) || (EepOptions.FileName[0] == '\0')) {
+        printf("ERROR: EEPROM operation not specified. Use 'adna -h' for usage.\n");
         return EXIT_FAILURE;
-    }
+    } else {}
 
     return EXIT_SUCCESS;
 }
@@ -1718,21 +1730,23 @@ main(int argc, char **argv)
     goto __exit;
   }
 
+  if (EepOptions.bListOnly == true) {
+    goto __exit;
+  }
+
   printf("[0] Cancel\n\n");
   do {
-    printf("    Device selection --> ");
-    if (scanf("%d", &j) <= 0)
-    {
-        // Added for compiler warning
-    }
+      printf("    Device selection --> ");
+      if (scanf("%d", &j) <= 0)
+      {
+          // Added for compiler warning
+      }
   } while (j > NumDevices);
-
   if (j == 0)
-    goto __exit;
-
+      goto __exit;
   status = eep_process(j);
   if (status == EXIT_FAILURE)
-    goto __exit;
+      goto __exit;
 
 __exit:
   show_kernel_cleanup();
