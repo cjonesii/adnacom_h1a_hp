@@ -151,6 +151,15 @@ bool pcidev_is_adnacom(struct pci_dev *p)
         return false;
 }
 
+int pci_get_eeprom_stat_n_ctrl(struct pci_dev *pdev)
+{
+  struct pci_cap *cap;
+  cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+  int stat_n_ctrl = pci_read_word(pdev, cap->addr + EEP_STAT_N_CTRL_ADDR);
+  // return ((stat_n_ctrl & PCI_EXP_FLAGS_TYPE) >> 4) & 0xFF;
+  return stat_n_ctrl;
+}
+
 int
 config_fetch(struct device *d, unsigned int pos, unsigned int len)
 {
@@ -1420,7 +1429,7 @@ static int eep_process(int j)
     for (d=first_dev; d; d=d->next) {
         if (d->NumDevice == j) {
             get_resource_name(d->dev);
-            eep_present = eep_read_status_reg();
+            eep_present = eep_read_status_reg(d->dev);
 
             switch (eep_present) {
             case NOT_PRSNT:

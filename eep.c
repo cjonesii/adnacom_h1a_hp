@@ -37,12 +37,12 @@ static void eep_data(uint32_t cmd, uint32_t *buffer)
     }
 }
 
-int eep_read_status_reg(void)
+int eep_read_status_reg(struct pci_dev *p)
 {
     int eepPresent = EEP_PRSNT_MAX;
     /* Read the Serial EEPROM Status and Control register */
-    eepPresent = ((pcimem(REG_READ, EEP_STAT_N_CTRL_ADDR, 0)) >> EEP_PRSNT_OFFSET) & 3;
-    
+    // eepPresent = ((pcimem(REG_READ, EEP_STAT_N_CTRL_ADDR, 0)) >> EEP_PRSNT_OFFSET) & 3;
+    eepPresent = (pci_get_eeprom_stat_n_ctrl(p) >> EEP_PRSNT_OFFSET) & 3;
     fflush(stdout);
     return eepPresent;
 }
