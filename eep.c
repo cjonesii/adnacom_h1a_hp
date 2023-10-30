@@ -37,15 +37,6 @@ static void eep_data(uint32_t cmd, uint32_t *buffer)
     }
 }
 
-int eep_read_status_reg(struct pci_dev *p)
-{
-    int eepPresent = EEP_PRSNT_MAX;
-    /* Read the Serial EEPROM Status and Control register */
-    // eepPresent = ((pcimem(REG_READ, EEP_STAT_N_CTRL_ADDR, 0)) >> EEP_PRSNT_OFFSET) & 3;
-    eepPresent = (pci_get_eeprom_stat_n_ctrl(p) >> EEP_PRSNT_OFFSET) & 3;
-    fflush(stdout);
-    return eepPresent;
-}
 #ifndef ADNA
 int eep_set_address_width(uint8_t width)
 {
@@ -63,6 +54,7 @@ int eep_set_address_width(uint8_t width)
     return status;
 }
 #endif // ADNA
+
 void eep_read(uint32_t offset, uint32_t *read_buffer)
 {
     if (EepOptions.bVerbose)

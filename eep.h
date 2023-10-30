@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "pciutils.h"
 
 #define EEP_STAT_N_CTRL_ADDR    (0x260)
 #define EEP_BUFFER_ADDR         (0x264)
@@ -111,8 +110,6 @@ enum access {
     REG_READ
 };
 
-int eep_read_status_reg(struct pci_dev *p);
-// int eep_set_address_width(uint8_t width);
 void eep_read(uint32_t offset, uint32_t *read_buffer);
 void eep_read_16(uint32_t offset, uint16_t *read_buffer);
 void eep_write(uint32_t offset, uint32_t write_buffer);

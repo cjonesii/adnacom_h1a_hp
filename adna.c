@@ -119,6 +119,19 @@ struct adnatool_pci_device {
 int pci_get_devtype(struct pci_dev *pdev);
 bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
+int pci_eep_read_status_reg(struct device *d);
+
+int pci_eep_read_status_reg(struct device *d)
+{
+    int eepPresent = EEP_PRSNT_MAX;
+    unsigned int cnt;
+    /* Read the Serial EEPROM Status and Control register */
+    cnt = d->config_cached;
+    config_fetch(d, cnt, sizeof(long));
+    eepPresent = (get_conf_long(d, EEP_STAT_N_CTRL_ADDR) >> EEP_PRSNT_OFFSET) & 3;
+    fflush(stdout);
+    return eepPresent;
+}
 
 int pci_get_devtype(struct pci_dev *pdev)
 {
@@ -151,15 +164,6 @@ bool pcidev_is_adnacom(struct pci_dev *p)
         return false;
 }
 
-int pci_get_eeprom_stat_n_ctrl(struct pci_dev *pdev)
-{
-  struct pci_cap *cap;
-  cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
-  int stat_n_ctrl = pci_read_word(pdev, cap->addr + EEP_STAT_N_CTRL_ADDR);
-  // return ((stat_n_ctrl & PCI_EXP_FLAGS_TYPE) >> 4) & 0xFF;
-  return stat_n_ctrl;
-}
-
 int
 config_fetch(struct device *d, unsigned int pos, unsigned int len)
 {
@@ -177,7 +181,7 @@ config_fetch(struct device *d, unsigned int pos, unsigned int len)
     {
       int orig_size = d->config_bufsize;
       while (end > d->config_bufsize)
-	d->config_bufsize *= 2;
+        d->config_bufsize *= 2;
       d->config = xrealloc(d->config, d->config_bufsize);
       d->present = xrealloc(d->present, d->config_bufsize);
       memset(d->present + orig_size, 0, d->config_bufsize - orig_size);
@@ -201,30 +205,28 @@ scan_device(struct pci_dev *p)
   if (!pcidev_is_adnacom(p))
     return NULL;
 
-//   if (!pci_is_upstream(p))
-//     return NULL;
-
   d = xmalloc(sizeof(struct device));
   memset(d, 0, sizeof(*d));
   d->dev = p;
-  d->config_cached = d->config_bufsize = 64;
-  d->config = xmalloc(64);
-  d->present = xmalloc(64);
-  memset(d->present, 1, 64);
-  if (!pci_read_block(p, 0, d->config, 64))
-    {
-      fprintf(stderr, "adna: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
-              p->domain, p->bus, p->dev, p->func);
-      seen_errors++;
-      return NULL;
-    }
-  if ((d->config[PCI_HEADER_TYPE] & 0x7f) == PCI_HEADER_TYPE_CARDBUS)
-    {
-      /* For cardbus bridges, we need to fetch 64 bytes more to get the
-       * full standard header... */
-      if (config_fetch(d, 64, 64))
-        d->config_cached += 64;
-    }
+  d->config_cached = d->config_bufsize = 512; // Increase to 512 from 64 to include EEPROM register
+  d->config = xmalloc(512);
+  d->present = xmalloc(512);
+  memset(d->present, 1, 512);
+
+  if (!pci_read_block(p, 0, d->config, 512)) {
+    fprintf(stderr, "adna: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
+            p->domain, p->bus, p->dev, p->func);
+    seen_errors++;
+    return NULL;
+  }
+#ifndef ADNA
+  if ((d->config[PCI_HEADER_TYPE] & 0x7f) == PCI_HEADER_TYPE_CARDBUS) {
+    /* For cardbus bridges, we need to fetch 64 bytes more to get the
+      * full standard header... */
+    if (config_fetch(d, 64, 64))
+      d->config_cached += 64;
+  }
+#endif
   pci_setup_cache(p, d->config, d->config_cached);
   pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_CLASS);
   return d;
@@ -990,16 +992,16 @@ show_hex_dump(struct device *d)
     {
       cnt = 256;
       if (opt_hex >= 4 && config_fetch(d, 256, 4096-256))
-	cnt = 4096;
+        cnt = 4096;
     }
 
   for (i=0; i<cnt; i++)
     {
       if (! (i & 15))
-	printf("%02x:", i);
+        printf("%02x:", i);
       printf(" %02x", get_conf_byte(d, i));
       if ((i & 15) == 15)
-	putchar('\n');
+        putchar('\n');
     }
 }
 
@@ -1429,7 +1431,7 @@ static int eep_process(int j)
     for (d=first_dev; d; d=d->next) {
         if (d->NumDevice == j) {
             get_resource_name(d->dev);
-            eep_present = eep_read_status_reg(d->dev);
+            eep_present = pci_eep_read_status_reg(d);
 
             switch (eep_present) {
             case NOT_PRSNT:

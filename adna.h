@@ -139,5 +139,3 @@ void show_forest(struct pci_filter *filter);
 /* ls-map.c */
 
 void map_the_bus(void);
-
-int pci_get_eeprom_stat_n_ctrl(struct pci_dev *pdev);
