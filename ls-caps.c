@@ -661,7 +661,7 @@ static float power_limit(int value, int scale)
   static const float scales[4] = { 1.0, 0.1, 0.01, 0.001 };
   return value * scales[scale];
 }
-#endif // ADNA
+
 static const char *latency_l0s(int value)
 {
   static const char *latencies[] = { "<64ns", "<128ns", "<256ns", "<512ns", "<1us", "<2us", "<4us", "unlimited" };
@@ -673,7 +673,7 @@ static const char *latency_l1(int value)
   static const char *latencies[] = { "<1us", "<2us", "<4us", "<8us", "<16us", "<32us", "<64us", "unlimited" };
   return latencies[value];
 }
-#ifndef ADNA
+
 static void cap_express_dev(struct device *d, int where, int type)
 {
   u32 t;
@@ -766,7 +766,7 @@ static char *link_compare(int sta, int cap)
     return "strange";
   return "ok";
 }
-
+#ifndef ADNA
 static char *aspm_support(int code)
 {
   switch (code)
@@ -783,7 +783,7 @@ static char *aspm_support(int code)
 	return "unknown";
     }
 }
-
+#endif
 static const char *aspm_enabled(int code)
 {
   static const char *desc[] = { "Disabled", "L0s Enabled", "L1 Enabled", "L0s L1 Enabled" };
@@ -802,12 +802,14 @@ static void cap_express_link(struct device *d, int where, int type)
   aspm = (t & PCI_EXP_LNKCAP_ASPM) >> 10;
   cap_speed = t & PCI_EXP_LNKCAP_SPEED;
   cap_width = (t & PCI_EXP_LNKCAP_WIDTH) >> 4;
+#ifdef ADNA
+  (void)(aspm);
+#endif
 #ifndef ADNA
   printf("\t\tLnkCap:\tPort #%d, Speed %s, Width x%d, ASPM %s",
-	t >> 24,
-	link_speed(cap_speed), cap_width,
-	aspm_support(aspm));
-#endif // ADNA
+         t >> 24,
+         link_speed(cap_speed), cap_width,
+         aspm_support(aspm));
   printf("\t  LnkCap: ASPM %s", aspm_support(aspm)); // Custom
   if (aspm)
     {
@@ -815,20 +817,19 @@ static void cap_express_link(struct device *d, int where, int type)
       if (aspm & 1)
 	printf("L0s %s", latency_l0s((t & PCI_EXP_LNKCAP_L0S) >> 12));
       if (aspm & 2)
-	printf("%sL1 %s", (aspm & 1) ? ", " : "",
-	    latency_l1((t & PCI_EXP_LNKCAP_L1) >> 15));
+        printf("%sL1 %s", (aspm & 1) ? ", " : "",
+               latency_l1((t & PCI_EXP_LNKCAP_L1) >> 15));
     }
   printf("\n");
-#ifndef ADNA
   printf("\t\t\tClockPM%c Surprise%c LLActRep%c BwNot%c ASPMOptComp%c\n",
-	FLAG(t, PCI_EXP_LNKCAP_CLOCKPM),
-	FLAG(t, PCI_EXP_LNKCAP_SURPRISE),
-	FLAG(t, PCI_EXP_LNKCAP_DLLA),
-	FLAG(t, PCI_EXP_LNKCAP_LBNC),
-	FLAG(t, PCI_EXP_LNKCAP_AOC));
+         FLAG(t, PCI_EXP_LNKCAP_CLOCKPM),
+         FLAG(t, PCI_EXP_LNKCAP_SURPRISE),
+         FLAG(t, PCI_EXP_LNKCAP_DLLA),
+         FLAG(t, PCI_EXP_LNKCAP_LBNC),
+         FLAG(t, PCI_EXP_LNKCAP_AOC));
 #endif // ADNA
   w = get_conf_word(d, where + PCI_EXP_LNKCTL);
-  printf("\t  LnkCtl: ASPM %s\n", aspm_enabled(w & PCI_EXP_LNKCTL_ASPM));  // Custom
+  printf("\tASPM: ASPM %s\n", aspm_enabled(w & PCI_EXP_LNKCTL_ASPM));  // Custom
 #ifndef ADNA
   if ((type == PCI_EXP_TYPE_ROOT_PORT) || (type == PCI_EXP_TYPE_ENDPOINT) ||
       (type == PCI_EXP_TYPE_LEG_END) || (type == PCI_EXP_TYPE_PCI_BRIDGE))
@@ -845,7 +846,7 @@ static void cap_express_link(struct device *d, int where, int type)
   w = get_conf_word(d, where + PCI_EXP_LNKSTA);
   sta_speed = w & PCI_EXP_LNKSTA_SPEED;
   sta_width = (w & PCI_EXP_LNKSTA_WIDTH) >> 4;
-  printf("\t  LnkSta: Speed %s (%s), Width x%d (%s), ",
+  printf("\tLink Status: Speed %s (%s), Width x%d (%s)\n",
 	link_speed(sta_speed),
 	link_compare(sta_speed, cap_speed),
 	sta_width,
@@ -859,7 +860,7 @@ static void cap_express_link(struct device *d, int where, int type)
 	FLAG(w, PCI_EXP_LNKSTA_BWMGMT),
 	FLAG(w, PCI_EXP_LNKSTA_AUTBW));
 #endif
-  printf("LinkActive %s\n", FLAG(w, PCI_EXP_LNKSTA_DL_ACT) == '+' ? "Yes" : "No");
+  printf("\tLinkActive: %s\n", FLAG(w, PCI_EXP_LNKSTA_DL_ACT) == '+' ? "Yes" : "No");
 }
 #ifndef ADNA
 static const char *indicator(int code)
@@ -889,7 +890,7 @@ static void cap_express_slot(struct device *d, int where)
 	FLAG(t, PCI_EXP_SLTCAP_INTERLOCK),
 	FLAG(t, PCI_EXP_SLTCAP_NOCMDCOMP));
 #endif // ADNA
-printf("\t  SltCap: Hotplug %s\n", FLAG(t, PCI_EXP_SLTCAP_HPC) == '+' ? "Capable" : "Not Capable"); // Custom
+printf("\tHotplug: Hotplug %s\n", FLAG(t, PCI_EXP_SLTCAP_HPC) == '+' ? "Supported" : "Not Supported"); // Custom
   w = get_conf_word(d, where + PCI_EXP_SLTCTL);
 #ifndef ADNA
   printf("\t\tSltCtl:\tEnable: AttnBtn%c PwrFlt%c MRL%c PresDet%c CmdCplt%c HPIrq%c LinkChg%c\n",
@@ -1361,9 +1362,10 @@ cap_express(struct device *d, int where, int cap)
   int slot = 0;
   int link = 1;
 
-  printf("Express ");
-  if (verbose >= 2)
-    printf("(v%d) ", cap & PCI_EXP_FLAGS_VERS);
+  printf("\tPort Type: ");
+  // printf("Express ");
+  // if (verbose >= 2)
+  //   printf("(v%d) ", cap & PCI_EXP_FLAGS_VERS);
   switch (type)
     {
     case PCI_EXP_TYPE_ENDPOINT:
@@ -1381,7 +1383,8 @@ cap_express(struct device *d, int where, int cap)
       break;
     case PCI_EXP_TYPE_DOWNSTREAM:
       slot = cap & PCI_EXP_FLAGS_SLOT;
-      printf("Downstream Port (Slot%c)", FLAG(cap, PCI_EXP_FLAGS_SLOT));
+      // printf("Downstream Port (Slot%c)", FLAG(cap, PCI_EXP_FLAGS_SLOT));
+      printf("Downstream Port");
       break;
     case PCI_EXP_TYPE_PCI_BRIDGE:
       printf("PCI-Express to PCI/PCI-X Bridge");
@@ -1402,7 +1405,8 @@ cap_express(struct device *d, int where, int cap)
     default:
       printf("Unknown type %d", type);
   }
-  printf(", MSI %02x\n", (cap & PCI_EXP_FLAGS_IRQ) >> 9);
+  // printf(", MSI %02x\n", (cap & PCI_EXP_FLAGS_IRQ) >> 9);
+  printf("\n");
   if (verbose < 2)
     return type;
 
@@ -1712,13 +1716,13 @@ show_caps(struct device *d, int where)
 	      break;
 	    }
 	  id = get_conf_byte(d, where + PCI_CAP_LIST_ID);
-      if (PCI_CAP_ID_EXP == id) {
-        printf("\tCapabilities: ");
-      }
+      // if (PCI_CAP_ID_EXP == id) {
+      //   printf("\tCapabilities: ");
+      // }
       next = get_conf_byte(d, where + PCI_CAP_LIST_NEXT) & ~3;
       cap = get_conf_word(d, where + PCI_CAP_FLAGS);
-      if (PCI_CAP_ID_EXP == id)
-        printf("[%02x] ", where);
+      // if (PCI_CAP_ID_EXP == id)
+      //   printf("[%02x] ", where);
 
       if (been_there[where]++) {
           printf("<chain looped>\n");

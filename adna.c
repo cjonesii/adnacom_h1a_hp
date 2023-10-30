@@ -104,7 +104,7 @@ struct adnatool_pci_device {
         u16 did;
         u32 cls_rev;
 } adnatool_pci_devtbl[] = {
-#if 0
+#if 1
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
 #else
         /* for debugging purpose, put in some actual PCI devices i have 
@@ -116,21 +116,71 @@ struct adnatool_pci_device {
 
 };
 
+
+/*** PCI devices and access to their config space ***/
+
+struct device {
+  struct device *next;
+  struct pci_dev *dev;
+  /* Bus topology calculated by grow_tree() */
+  struct device *bus_next;
+  struct bus *parent_bus;
+  struct bridge *bridge;
+  /* Cache */
+  unsigned int config_cached, config_bufsize;
+  byte *config;				/* Cached configuration space data */
+  byte *present;			/* Maps which configuration bytes are present */
+  int NumDevice;
+};
+
+struct bridge {
+  struct bridge *chain;			/* Single-linked list of bridges */
+  struct bridge *next, *child;		/* Tree of bridges */
+  struct bus *first_bus;		/* List of buses connected to this bridge */
+  unsigned int domain;
+  unsigned int primary, secondary, subordinate;	/* Bus numbers */
+  struct device *br_dev;
+};
+
+struct bus {
+  unsigned int domain;
+  unsigned int number;
+  struct bus *sibling;
+  struct bridge *parent_bridge;
+  struct device *first_dev, **last_dev;
+};
+
+struct eep_options {
+    bool bVerbose;
+    int bLoadFile;
+    char    FileName[255];
+    char    SerialNumber[4];
+#ifndef ADNA
+    int8_t      DeviceNumber;
+    bool bIgnoreWarnings;
+    u8      EepWidthSet;
+    u16     LimitPlxChip;
+    u8      LimitPlxRevision;
+#endif
+    u16     ExtraBytes;
+    bool bListOnly;
+    bool bSerialNumber;
+};
+
 int pci_get_devtype(struct pci_dev *pdev);
 bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
-int pci_eep_read_status_reg(struct device *d);
 
-int pci_eep_read_status_reg(struct device *d)
+uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset)
 {
-    int eepPresent = EEP_PRSNT_MAX;
+    int32_t readLong = 0;
     unsigned int cnt;
     /* Read the Serial EEPROM Status and Control register */
     cnt = d->config_cached;
-    config_fetch(d, cnt, sizeof(long));
-    eepPresent = (get_conf_long(d, EEP_STAT_N_CTRL_ADDR) >> EEP_PRSNT_OFFSET) & 3;
+    config_fetch(d, cnt, 512);
+    readLong = get_conf_long(d, offset);
     fflush(stdout);
-    return eepPresent;
+    return readLong;
 }
 
 int pci_get_devtype(struct pci_dev *pdev)
@@ -281,6 +331,16 @@ get_conf_long(struct device *d, unsigned int pos)
     (d->config[pos+1] << 8) |
     (d->config[pos+2] << 16) |
     (d->config[pos+3] << 24);
+}
+
+void
+set_conf_long(struct device *d, unsigned int pos, uint32_t data)
+{
+  check_conf_range(d, pos, 4);
+  d->config[pos  ] = (data << 0)  & 0xFF;
+  d->config[pos+1] = (data << 8)  & 0xFF;
+  d->config[pos+2] = (data << 16) & 0xFF;
+  d->config[pos+3] = (data << 24) & 0xFF;
 }
 
 /*** Sorting ***/
@@ -1152,7 +1212,7 @@ static int is_valid_hex(const char *serialnumber) {
     return 1; // Valid hexadecimal value
 }
 
-static uint8_t EepromFileLoad(void)
+static uint8_t EepromFileLoad(struct device *d, bool verbose)
 {
     printf("Function: %s\n", __func__);
     uint8_t rc;
@@ -1237,8 +1297,8 @@ static uint8_t EepromFileLoad(void)
         value = *(uint32_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
-        eep_write(four_byte_count, value);
-        eep_read(four_byte_count, &Verify_Value);
+        eep_write(d, four_byte_count, value, verbose);
+        eep_read(d, four_byte_count, &Verify_Value, verbose);
 
         if (Verify_Value != value) {
             printf("ERROR: offset:%02X  wrote:%08X  read:%08X\n",
@@ -1254,8 +1314,8 @@ static uint8_t EepromFileLoad(void)
         value = *(uint16_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
-        eep_write_16(offset, (uint16_t)value);
-        eep_read_16(offset, &Verify_Value_16);
+        eep_write_16(d, offset, (uint16_t)value, verbose);
+        eep_read_16(d, offset, &Verify_Value_16, verbose);
 
         if (Verify_Value_16 != (uint16_t)value) {
             printf("ERROR: offset:%02X  wrote:%04X  read:%04X\n",
@@ -1274,7 +1334,7 @@ _Exit_File_Load:
     return rc;
 }
 
-static uint8_t EepromFileSave(void)
+static uint8_t EepromFileSave(struct device *d, bool verbose)
 {
     printf("Function: %s\n", __func__);
     uint32_t value = 0;
@@ -1291,7 +1351,7 @@ static uint8_t EepromFileSave(void)
     EepSize = sizeof(uint32_t);
 
     // Get EEPROM header
-    eep_read(0x0, &value);
+    eep_read(d, 0x0, &value, verbose);
 
     // Add register byte count
     EepSize += (value >> 16);
@@ -1322,12 +1382,12 @@ static uint8_t EepromFileSave(void)
     // Each EEPROM read via BAR0 is 4 bytes so offset is represented in bytes (aligned in 32 bits)
     // while four_byte_count is represented in count of 4-byte access
     for (offset = 0, four_byte_count = 0; offset < (EepSize & ~0x3); offset += sizeof(uint32_t), four_byte_count++) {
-        eep_read(four_byte_count, (uint32_t*)(g_pBuffer + offset));
+        eep_read(d, four_byte_count, (uint32_t*)(g_pBuffer + offset), verbose);
     }
 
     // Read any remaining 16-bit aligned byte
     if (offset < EepSize) {
-        eep_read_16(four_byte_count, (uint16_t*)(g_pBuffer + offset));
+        eep_read_16(d, four_byte_count, (uint16_t*)(g_pBuffer + offset), verbose);
     }
     printf("Ok\n");
 
@@ -1374,7 +1434,7 @@ static uint8_t EepromFileSave(void)
     return EXIT_SUCCESS;
 }
 
-static uint8_t EepFile(void)
+static uint8_t EepFile(struct device *d)
 {
     printf("Function: %s\n", __func__);
 #ifndef ADNA
@@ -1398,9 +1458,9 @@ static uint8_t EepFile(void)
 #endif // ADNA
 
     if (EepOptions.bLoadFile) {
-        return EepromFileLoad();
+        return EepromFileLoad(d, EepOptions.bVerbose);
     } else {
-        return EepromFileSave();
+        return EepromFileSave(d, EepOptions.bVerbose);
     }
 }
 
@@ -1431,7 +1491,7 @@ static int eep_process(int j)
     for (d=first_dev; d; d=d->next) {
         if (d->NumDevice == j) {
             get_resource_name(d->dev);
-            eep_present = pci_eep_read_status_reg(d);
+            eep_present = (pci_eep_read_status_reg(d, EEP_STAT_N_CTRL_ADDR) >> EEP_PRSNT_OFFSET) & 3;;
 
             switch (eep_present) {
             case NOT_PRSNT:
@@ -1443,13 +1503,13 @@ static int eep_process(int j)
             break;
             case PRSNT_INVALID:
                 printf("Present but invalid data/CRC error/blank\n");
-                eep_init();
+                eep_init(d, EepOptions.bVerbose);
                 printf("EEPROM initialization done, please restart your computer.\n");
             break;
             }
 
             if (EXIT_SUCCESS == status) {
-                status = EepFile();
+                status = EepFile(d);
             } else {
                 return status;
             }

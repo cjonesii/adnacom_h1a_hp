@@ -123,7 +123,7 @@ cap_dsn(struct device *d, int where)
 	t2 >> 24, (t2 >> 16) & 0xff, (t2 >> 8) & 0xff, t2 & 0xff,
 	t1 >> 24, (t1 >> 16) & 0xff, (t1 >> 8) & 0xff, t1 & 0xff);
 #else
-  printf("\tDevice Serial Number %02x-%02x-%02x-%02x\n",
+  printf("\tDevice Serial Number: %02x-%02x-%02x-%02x\n",
 	t2 >> 24, (t2 >> 16) & 0xff, (t2 >> 8) & 0xff, t2 & 0xff);
 #endif
 }

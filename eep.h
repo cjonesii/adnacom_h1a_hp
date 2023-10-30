@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include "adna.h"
 
 #define EEP_STAT_N_CTRL_ADDR    (0x260)
 #define EEP_BUFFER_ADDR         (0x264)
@@ -85,7 +86,6 @@ enum EEP_WR_EN {
     EEP_WR_EN_MAX
 };
 
-
 union eep_status_and_control_reg {
     struct _cmd_n_status_struct {
         uint32_t blk_addr             : 13;/* [12:0] */
@@ -110,10 +110,10 @@ enum access {
     REG_READ
 };
 
-void eep_read(uint32_t offset, uint32_t *read_buffer);
-void eep_read_16(uint32_t offset, uint16_t *read_buffer);
-void eep_write(uint32_t offset, uint32_t write_buffer);
-void eep_write_16(uint32_t offset, uint16_t write_buffer);
-void eep_init(void);
+void eep_read(struct device *d, uint32_t offset, uint32_t *read_buffer, bool verbose);
+void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer, bool verbose);
+void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer, bool verbose);
+void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer, bool verbose);
+void eep_init(struct device *d, bool verbose);
 
 #endif // __EEP_H__

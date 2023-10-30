@@ -35,51 +35,17 @@
 extern int verbose;
 extern struct pci_filter filter;
 extern char *opt_pcimap;
-
-/*** PCI devices and access to their config space ***/
-
-struct device {
-  struct device *next;
-  struct pci_dev *dev;
-  /* Bus topology calculated by grow_tree() */
-  struct device *bus_next;
-  struct bus *parent_bus;
-  struct bridge *bridge;
-  /* Cache */
-  unsigned int config_cached, config_bufsize;
-  byte *config;				/* Cached configuration space data */
-  byte *present;			/* Maps which configuration bytes are present */
-  int NumDevice;
-};
-
-struct eep_options {
-    bool bVerbose;
-    int bLoadFile;
-    char    FileName[255];
-    char    SerialNumber[4];
-#ifndef ADNA
-    int8_t      DeviceNumber;
-    bool bIgnoreWarnings;
-    u8      EepWidthSet;
-    u16     LimitPlxChip;
-    u8      LimitPlxRevision;
-#endif
-    u16     ExtraBytes;
-    bool bListOnly;
-    bool bSerialNumber;
-};
-
 extern struct device *first_dev;
 extern struct pci_access *pacc;
+// extern struct eep_options EepOptions;
 
 struct device *scan_device(struct pci_dev *p);
 void show_device(struct device *d);
-
 int config_fetch(struct device *d, unsigned int pos, unsigned int len);
 u32 get_conf_long(struct device *d, unsigned int pos);
+void set_conf_long(struct device *d, unsigned int pos, uint32_t data);
 word get_conf_word(struct device *d, unsigned int pos);
 byte get_conf_byte(struct device *d, unsigned int pos);
-
 void get_subid(struct device *d, word *subvp, word *subdp);
 
 /* Useful macros for decoding of bits and bit fields */
@@ -114,23 +80,6 @@ void show_kernel_cleanup(void);
 
 /* ls-tree.c */
 
-struct bridge {
-  struct bridge *chain;			/* Single-linked list of bridges */
-  struct bridge *next, *child;		/* Tree of bridges */
-  struct bus *first_bus;		/* List of buses connected to this bridge */
-  unsigned int domain;
-  unsigned int primary, secondary, subordinate;	/* Bus numbers */
-  struct device *br_dev;
-};
-
-struct bus {
-  unsigned int domain;
-  unsigned int number;
-  struct bus *sibling;
-  struct bridge *parent_bridge;
-  struct device *first_dev, **last_dev;
-};
-
 extern struct bridge host_bridge;
 
 void grow_tree(void);
@@ -139,3 +88,5 @@ void show_forest(struct pci_filter *filter);
 /* ls-map.c */
 
 void map_the_bus(void);
+
+uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset);
