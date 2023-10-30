@@ -37,7 +37,6 @@ extern struct pci_filter filter;
 extern char *opt_pcimap;
 extern struct device *first_dev;
 extern struct pci_access *pacc;
-// extern struct eep_options EepOptions;
 
 struct device *scan_device(struct pci_dev *p);
 void show_device(struct device *d);

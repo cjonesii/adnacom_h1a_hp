@@ -31,63 +31,9 @@ static int opt_path;			/* Show bridge path */
 static int opt_machine;			/* Generate machine-readable output */
 static int opt_domains;			/* Show domain numbers (0=disabled, 1=auto-detected, 2=requested) */
 static int opt_kernel;			/* Show kernel drivers */
-#ifndef ADNA
-static int opt_filter;			/* Any filter was given */
-static int opt_tree;			/* Show bus tree */
-static int opt_map_mode;		/* Bus mapping mode enabled */
-static int opt_query_dns;		/* Query the DNS (0=disabled, 1=enabled, 2=refresh cache) */
-static int opt_query_all;		/* Query the DNS for all entries */
-#endif // ADNA
 char *opt_pcimap;			/* Override path to Linux modules.pcimap */
 
 const char program_name[] = "adna";
-#ifndef ADNA
-static char options[] = "nvbxs:d:tPi:mgp:qkMDQ" GENERIC_OPTIONS ;
-
-static char help_msg[] =
-"Usage: adna [<switches>]\n"
-"\n"
-"Basic display modes:\n"
-"-mm\t\tProduce machine-readable output (single -m for an obsolete format)\n"
-"-t\t\tShow bus tree\n"
-"\n"
-"Display options:\n"
-"-v\t\tBe verbose (-vv or -vvv for higher verbosity)\n"
-#ifdef PCI_OS_LINUX
-"-k\t\tShow kernel drivers handling each device\n"
-#endif
-"-x\t\tShow hex-dump of the standard part of the config space\n"
-"-xxx\t\tShow hex-dump of the whole config space (dangerous; root only)\n"
-"-xxxx\t\tShow hex-dump of the 4096-byte extended config space (root only)\n"
-"-b\t\tBus-centric view (addresses and IRQ's as seen by the bus)\n"
-"-D\t\tAlways show domain numbers\n"
-"-P\t\tDisplay bridge path in addition to bus and device number\n"
-"-PP\t\tDisplay bus path in addition to bus and device number\n"
-"\n"
-"Resolving of device ID's to names:\n"
-"-n\t\tShow numeric ID's\n"
-"-nn\t\tShow both textual and numeric ID's (names & numbers)\n"
-#ifdef PCI_USE_DNS
-"-q\t\tQuery the PCI ID database for unknown ID's via DNS\n"
-"-qq\t\tAs above, but re-query locally cached entries\n"
-"-Q\t\tQuery the PCI ID database for all ID's via DNS\n"
-#endif
-"\n"
-"Selection of devices:\n"
-"-s [[[[<domain>]:]<bus>]:][<slot>][.[<func>]]\tShow only devices in selected slots\n"
-"-d [<vendor>]:[<device>][:<class>]\t\tShow only devices with specified ID's\n"
-"\n"
-"Other options:\n"
-"-i <file>\tUse specified ID database instead of %s\n"
-#ifdef PCI_OS_LINUX
-"-p <file>\tLook up kernel modules in a given file instead of default modules.pcimap\n"
-#endif
-"-M\t\tEnable `bus mapping' mode (dangerous; root only)\n"
-"\n"
-"PCI access options:\n"
-GENERIC_HELP
-;
-#endif // ADNA
 char g_h1a_us_port_bar0[256] = "\0";
 uint8_t *g_pBuffer = NULL;
 struct eep_options EepOptions;
@@ -1212,7 +1158,7 @@ static int is_valid_hex(const char *serialnumber) {
     return 1; // Valid hexadecimal value
 }
 
-static uint8_t EepromFileLoad(struct device *d, bool verbose)
+static uint8_t EepromFileLoad(struct device *d)
 {
     printf("Function: %s\n", __func__);
     uint8_t rc;
@@ -1297,8 +1243,8 @@ static uint8_t EepromFileLoad(struct device *d, bool verbose)
         value = *(uint32_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
-        eep_write(d, four_byte_count, value, verbose);
-        eep_read(d, four_byte_count, &Verify_Value, verbose);
+        eep_write(d, four_byte_count, value, EepOptions.bVerbose);
+        eep_read(d, four_byte_count, &Verify_Value, EepOptions.bVerbose);
 
         if (Verify_Value != value) {
             printf("ERROR: offset:%02X  wrote:%08X  read:%08X\n",
@@ -1314,8 +1260,8 @@ static uint8_t EepromFileLoad(struct device *d, bool verbose)
         value = *(uint16_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
-        eep_write_16(d, offset, (uint16_t)value, verbose);
-        eep_read_16(d, offset, &Verify_Value_16, verbose);
+        eep_write_16(d, offset, (uint16_t)value, EepOptions.bVerbose);
+        eep_read_16(d, offset, &Verify_Value_16, EepOptions.bVerbose);
 
         if (Verify_Value_16 != (uint16_t)value) {
             printf("ERROR: offset:%02X  wrote:%04X  read:%04X\n",
@@ -1334,7 +1280,7 @@ _Exit_File_Load:
     return rc;
 }
 
-static uint8_t EepromFileSave(struct device *d, bool verbose)
+static uint8_t EepromFileSave(struct device *d)
 {
     printf("Function: %s\n", __func__);
     uint32_t value = 0;
@@ -1351,7 +1297,7 @@ static uint8_t EepromFileSave(struct device *d, bool verbose)
     EepSize = sizeof(uint32_t);
 
     // Get EEPROM header
-    eep_read(d, 0x0, &value, verbose);
+    eep_read(d, 0x0, &value, EepOptions.bVerbose);
 
     // Add register byte count
     EepSize += (value >> 16);
@@ -1382,12 +1328,12 @@ static uint8_t EepromFileSave(struct device *d, bool verbose)
     // Each EEPROM read via BAR0 is 4 bytes so offset is represented in bytes (aligned in 32 bits)
     // while four_byte_count is represented in count of 4-byte access
     for (offset = 0, four_byte_count = 0; offset < (EepSize & ~0x3); offset += sizeof(uint32_t), four_byte_count++) {
-        eep_read(d, four_byte_count, (uint32_t*)(g_pBuffer + offset), verbose);
+        eep_read(d, four_byte_count, (uint32_t*)(g_pBuffer + offset), EepOptions.bVerbose);
     }
 
     // Read any remaining 16-bit aligned byte
     if (offset < EepSize) {
-        eep_read_16(d, four_byte_count, (uint16_t*)(g_pBuffer + offset), verbose);
+        eep_read_16(d, four_byte_count, (uint16_t*)(g_pBuffer + offset), EepOptions.bVerbose);
     }
     printf("Ok\n");
 
@@ -1458,9 +1404,9 @@ static uint8_t EepFile(struct device *d)
 #endif // ADNA
 
     if (EepOptions.bLoadFile) {
-        return EepromFileLoad(d, EepOptions.bVerbose);
+        return EepromFileLoad(d);
     } else {
-        return EepromFileSave(d, EepOptions.bVerbose);
+        return EepromFileSave(d);
     }
 }
 
@@ -1543,26 +1489,10 @@ static void DisplayHelp(void)
 static uint8_t ProcessCommandLine(int argc, char *argv[])
 {
     uint16_t i;
-#ifndef ADNA
-    char *pToken;
-    bool bChipTypeValid;
-#endif // ADNA
     bool bGetFileName;
     bool bGetSerialNumber;
-#ifndef ADNA
-    bool bGetChipType;
-    bool bGetEepWidth;
-    bool bGetByteCount;
-    bool bGetDeviceNum;
-#endif // ADNA
     bGetFileName  = false;
     bGetSerialNumber = false;
-#ifndef ADNA
-    bGetChipType  = false;
-    bGetEepWidth  = false;
-    bGetDeviceNum = false;
-    bGetByteCount = false;
-#endif // ADNA
     for (i = 1; i < argc; i++) {
         if (bGetFileName) {
             if (argv[i][0] == '-') {
@@ -1597,85 +1527,6 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
             // Flag parameter retrieved
             bGetSerialNumber = false;
         }
-#ifndef ADNA
-        else if (bGetChipType) {
-            if (argv[i][0] == '-') {
-                printf("ERROR: PLX chip type not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            // Get pointer to chip type
-            pToken = strtok(argv[i], ", ");
-
-            // Convert parameter to chip type
-            EepOptions.LimitPlxChip = (u16)strtol(pToken, NULL, 16);
-
-            // Get pointer to revision
-            pToken = strtok(NULL, " ");
-
-            // Convert to a revision if provided
-            if (pToken != NULL) {
-                EepOptions.LimitPlxRevision = (u8)strtol(pToken, NULL, 16);
-            }
-
-            // Default to valid chip type
-            bChipTypeValid = true;
-
-            // Verify supported chip type
-            if ((EepOptions.LimitPlxChip & 0xFF00) != 0x8600) {
-                bChipTypeValid = false;
-            }
-
-            if (bChipTypeValid == false) {
-                printf("ERROR: Invalid PLX chip type\n");
-                return CMD_LINE_ERR;
-            }
-
-            // Flag parameter retrieved
-            bGetChipType = false;
-        } else if (bGetEepWidth) {
-            if (argv[i][0] == '-') {
-                printf("ERROR: EEPROM address width override not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            // Convert parameter to decimal
-            EepOptions.EepWidthSet = atoi(argv[i]);
-
-            // Flag parameter retrieved
-            bGetEepWidth = false;
-        } else if (bGetDeviceNum) {
-            if (argv[i][0] == '-') {
-                printf("ERROR: Device number not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            // Convert parameter to decimal
-            EepOptions.DeviceNumber = atoi(argv[i]);
-
-            // Listing starts @ 1, so decrement since device list starts @ 0
-            EepOptions.DeviceNumber--;
-
-            // Flag parameter retrieved
-            bGetDeviceNum = false;
-        } else if (bGetByteCount) {
-            if (argv[i][0] == '-') {
-                printf("ERROR: Extra byte count not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            // Convert parameter to decimal byte count
-            EepOptions.ExtraBytes = (u16)atol(argv[i]);
-
-            if (EepOptions.ExtraBytes == 0) {
-                printf("ERROR: Invalid extra byte count\n");
-                return CMD_LINE_ERR;
-            }
-
-            // Flag parameter retrieved
-            bGetByteCount = false;
-        }
-#endif // ADNA
         else if ((strcasecmp(argv[i], "-?") == 0) ||
                    (strcasecmp(argv[i], "-h") == 0)) {
             
@@ -1695,19 +1546,6 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
             // Set flag to get file name
             bGetFileName = true;
         } 
-#ifndef ADNA
-        else if (strcasecmp(argv[i], "-p") == 0) {
-            bGetChipType = true;
-        } else if (strcasecmp(argv[i], "-w") == 0) {
-            bGetEepWidth = true;
-        } else if (strcasecmp(argv[i], "-d") == 0) {
-            bGetDeviceNum = true;
-        } else if (strcasecmp(argv[i], "-n") == 0) {
-            bGetByteCount = true;
-        } else if (strcasecmp(argv[i], "-i") == 0) {
-            EepOptions.bIgnoreWarnings = true;
-        }
-#endif // ADNA
         else if (strcasecmp(argv[i], "-e") == 0) {
             EepOptions.bListOnly = true;
         } else if (strcasecmp(argv[i], "-n") == 0) {
@@ -1729,27 +1567,6 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
                 printf("ERROR: Serial number not specified\n");
                 return CMD_LINE_ERR;
             }
-#ifndef ADNA
-            if (bGetChipType) {
-                printf("ERROR: PLX chip type not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            if (bGetEepWidth) {
-                printf("ERROR: EEPROM address width not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            if (bGetDeviceNum) {
-                printf("ERROR: Device number not specified\n");
-                return CMD_LINE_ERR;
-            }
-
-            if (bGetByteCount) {
-                printf("ERROR: Extra byte count not specified\n");
-                return CMD_LINE_ERR;
-            }
-#endif // ADNA
         }
     }
 
@@ -1771,8 +1588,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 int
 main(int argc, char **argv)
 {
-  int i, j;
-  char *msg;
+  int j;
   int NumDevices = 1;
   int status = EXIT_SUCCESS;
 
@@ -1789,117 +1605,11 @@ main(int argc, char **argv)
   pacc->error = die;
   pci_filter_init(pacc, &filter);
 
-#ifndef ADNA
-  while ((i = getopt(argc, argv, options)) != -1)
-    switch (i)
-      {
-      case 'n':
-	pacc->numeric_ids++;
-	break;
-      case 'v':
-	verbose++;
-	break;
-      case 'b':
-	pacc->buscentric = 1;
-	break;
-      case 's':
-	if (msg = pci_filter_parse_slot(&filter, optarg))
-	  die("-s: %s", msg);
-	opt_filter = 1;
-	break;
-      case 'd':
-	if (msg = pci_filter_parse_id(&filter, optarg))
-	  die("-d: %s", msg);
-	opt_filter = 1;
-	break;
-      case 'x':
-	opt_hex++;
-	break;
-      case 'P':
-	opt_path++;
-	need_topology = 1;
-	break;
-      case 't':
-	opt_tree++;
-	need_topology = 1;
-	break;
-      case 'i':
-        pci_set_name_list_path(pacc, optarg, 0);
-	break;
-      case 'm':
-	opt_machine++;
-	break;
-      case 'p':
-	opt_pcimap = optarg;
-	break;
-#ifdef PCI_OS_LINUX
-      case 'k':
-	opt_kernel++;
-	break;
-#endif
-      case 'M':
-	opt_map_mode++;
-	break;
-      case 'D':
-	opt_domains = 2;
-	break;
-#ifdef PCI_USE_DNS
-      case 'q':
-	opt_query_dns++;
-	break;
-      case 'Q':
-	opt_query_all = 1;
-	break;
-#else
-      case 'q':
-      case 'Q':
-	die("DNS queries are not available in this version");
-#endif
-      default:
-	if (parse_generic_option(i, pacc, optarg))
-	  break;
-      bad:
-	fprintf(stderr, help_msg, pacc->id_file_name);
-	return 1;
-      }
-  if (optind < argc)
-    goto bad;
-
-  if (opt_query_dns)
-    {
-      pacc->id_lookup_mode |= PCI_LOOKUP_NETWORK;
-      if (opt_query_dns > 1)
-	pacc->id_lookup_mode |= PCI_LOOKUP_REFRESH_CACHE;
-    }
-  if (opt_query_all)
-    pacc->id_lookup_mode |= PCI_LOOKUP_NETWORK | PCI_LOOKUP_SKIP_LOCAL;
-#else
-  (void)(msg);
-  (void)(i);
-#endif
   verbose = 2; // very verbose by default
   pci_init(pacc);
-#ifndef ADNA
-  if (opt_map_mode)
-    {
-      if (need_topology)
-	die("Bus mapping mode does not recognize bus topology");
-      map_the_bus();
-    }
-  else
-    {
-#endif // ADNA
-      scan_devices();
-      sort_them(&NumDevices);
-#ifndef ADNA
-      if (need_topology)
-	grow_tree();
-      if (opt_tree)
-	show_forest(opt_filter ? &filter : NULL);
-      else
-#endif
-	show();
-    // }
+  scan_devices();
+  sort_them(&NumDevices);
+  show();
 
   // Check devices exist and one was selected
   if (NumDevices == 1) {
