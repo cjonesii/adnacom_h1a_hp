@@ -42,10 +42,11 @@ int eep_read_status_reg(void)
     int eepPresent = EEP_PRSNT_MAX;
     /* Read the Serial EEPROM Status and Control register */
     eepPresent = ((pcimem(REG_READ, EEP_STAT_N_CTRL_ADDR, 0)) >> EEP_PRSNT_OFFSET) & 3;
+    
     fflush(stdout);
     return eepPresent;
 }
-
+#ifndef ADNA
 int eep_set_address_width(uint8_t width)
 {
     if (EepOptions.bVerbose)
@@ -61,7 +62,7 @@ int eep_set_address_width(uint8_t width)
     fflush(stdout);
     return status;
 }
-
+#endif // ADNA
 void eep_read(uint32_t offset, uint32_t *read_buffer)
 {
     if (EepOptions.bVerbose)

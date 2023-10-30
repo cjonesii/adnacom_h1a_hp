@@ -16,6 +16,7 @@
 #include "eep.h"
 #include <unistd.h>
 #include <termios.h>
+#include <ctype.h>
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
@@ -88,7 +89,7 @@ GENERIC_HELP
 ;
 #endif // ADNA
 char g_h1a_us_port_bar0[256] = "\0";
-
+uint8_t *g_pBuffer = NULL;
 struct eep_options EepOptions;
 
 /*** Our view of the PCI bus ***/
@@ -204,7 +205,7 @@ scan_device(struct pci_dev *p)
   if (!pci_read_block(p, 0, d->config, 64))
     {
       fprintf(stderr, "adna: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
-	      p->domain, p->bus, p->dev, p->func);
+              p->domain, p->bus, p->dev, p->func);
       seen_errors++;
       return NULL;
     }
@@ -213,7 +214,7 @@ scan_device(struct pci_dev *p)
       /* For cardbus bridges, we need to fetch 64 bytes more to get the
        * full standard header... */
       if (config_fetch(d, 64, 64))
-	d->config_cached += 64;
+        d->config_cached += 64;
     }
   pci_setup_cache(p, d->config, d->config_cached);
   pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_CLASS);
@@ -230,8 +231,8 @@ scan_devices(void)
   for (p=pacc->devices; p; p=p->next)
     if (d = scan_device(p))
       {
-	d->next = first_dev;
-	first_dev = d;
+        d->next = first_dev;
+        first_dev = d;
       }
 }
 
@@ -1106,11 +1107,44 @@ show(void)
       show_device(d);
 }
 
+static void str_to_bin(char *binary_data, const char *serialnumber)
+{
+  // Initialize the binary_data buffer
+  memset(binary_data, 0, 4);
+
+  // Iterate through each pair of characters in the hexadecimal input
+  for (int i = 0; i < 4; i++) {
+    // Extract a pair of characters from the hexadecimal string
+    char hex_pair[3];
+    strncpy(hex_pair, serialnumber + (i * 2), 2);
+    hex_pair[2] = '\0';
+
+    // Convert the hex_pair to an integer
+    unsigned int hex_value;
+    if (sscanf(hex_pair, "%x", &hex_value) != 1) {
+      fprintf(stderr, "Error: Invalid hexadecimal input.\n");
+      exit(1);
+    }
+
+    // Store the integer value in the binary_data buffer
+    binary_data[i] = (char)hex_value;
+  }
+}
+
+static int is_valid_hex(const char *serialnumber) {
+    // Check if the input is a valid hexadecimal value and its length is even (byte-aligned)
+    for (int i = 0; serialnumber[i] != '\0'; i++) {
+        if (!isxdigit(serialnumber[i])) {
+            return 0; // Not a valid hexadecimal character
+        }
+    }
+    return 1; // Valid hexadecimal value
+}
+
 static uint8_t EepromFileLoad(void)
 {
     printf("Function: %s\n", __func__);
     uint8_t rc;
-    uint8_t *pBuffer;
     uint8_t four_byte_count;
     uint16_t Verify_Value_16 = 0;
     uint32_t value;
@@ -1119,7 +1153,7 @@ static uint8_t EepromFileLoad(void)
     uint32_t FileSize;
     FILE *pFile;
 
-    pBuffer   = NULL;
+    g_pBuffer   = NULL;
 
     printf("Load EEPROM file... \n");
     fflush(stdout);
@@ -1141,15 +1175,15 @@ static uint8_t EepromFileLoad(void)
     fseek(pFile, 0, SEEK_SET);
 
     // Allocate a buffer for the data
-    pBuffer = malloc(FileSize);
-    if (pBuffer == NULL) {
+    g_pBuffer = malloc(FileSize);
+    if (g_pBuffer == NULL) {
         fclose(pFile);
         return EEP_FAIL;
     }
 
     // Read data from file
     if (fread(
-            pBuffer,        // Buffer for data
+            g_pBuffer,        // Buffer for data
             sizeof(uint8_t),// Item size
             FileSize,       // Buffer size
             pFile           // File pointer
@@ -1161,6 +1195,17 @@ static uint8_t EepromFileLoad(void)
     fclose(pFile);
 
     printf("Ok (%dB)\n", (int)FileSize);
+
+    // Load serial number
+    for (uint8_t i = 0; i < sizeof(g_pBuffer); i++) {
+      if (g_pBuffer[i] == 0x42) {
+        g_pBuffer[i+1] = EepOptions.SerialNumber[0];
+        g_pBuffer[i+2] = EepOptions.SerialNumber[1];
+        g_pBuffer[i+3] = EepOptions.SerialNumber[2];
+        g_pBuffer[i+4] = EepOptions.SerialNumber[3];
+        break;
+      }
+    }
 
     // Default to successful operation
     rc = EXIT_SUCCESS;
@@ -1178,7 +1223,7 @@ static uint8_t EepromFileLoad(void)
         }
 
         // Get next value
-        value = *(uint32_t*)(pBuffer + offset);
+        value = *(uint32_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
         eep_write(four_byte_count, value);
@@ -1195,7 +1240,7 @@ static uint8_t EepromFileLoad(void)
     // Write any remaining 16-bit unaligned value
     if (offset < FileSize) {
         // Get next value
-        value = *(uint16_t*)(pBuffer + offset);
+        value = *(uint16_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
         eep_write_16(offset, (uint16_t)value);
@@ -1211,8 +1256,8 @@ static uint8_t EepromFileLoad(void)
 
 _Exit_File_Load:
     // Release the buffer
-    if (pBuffer != NULL) {
-        free(pBuffer);
+    if (g_pBuffer != NULL) {
+        free(g_pBuffer);
     }
 
     return rc;
@@ -1221,7 +1266,6 @@ _Exit_File_Load:
 static uint8_t EepromFileSave(void)
 {
     printf("Function: %s\n", __func__);
-    uint8_t *pBuffer;
     uint32_t value = 0;
     uint32_t offset;
     uint8_t four_byte_count;
@@ -1230,7 +1274,7 @@ static uint8_t EepromFileSave(void)
 
     printf("Get EEPROM data size.. \n");
 
-    pBuffer = NULL;
+    g_pBuffer = NULL;
 
     // Start with EEPROM header size
     EepSize = sizeof(uint32_t);
@@ -1259,46 +1303,59 @@ static uint8_t EepromFileSave(void)
     fflush(stdout);
 
     // Allocate a buffer for the EEPROM data
-    pBuffer = malloc(EepSize);
-    if (pBuffer == NULL) {
+    g_pBuffer = malloc(EepSize);
+    if (g_pBuffer == NULL) {
         return EEP_FAIL;
     }
 
     // Each EEPROM read via BAR0 is 4 bytes so offset is represented in bytes (aligned in 32 bits)
     // while four_byte_count is represented in count of 4-byte access
     for (offset = 0, four_byte_count = 0; offset < (EepSize & ~0x3); offset += sizeof(uint32_t), four_byte_count++) {
-        eep_read(four_byte_count, (uint32_t*)(pBuffer + offset));
+        eep_read(four_byte_count, (uint32_t*)(g_pBuffer + offset));
     }
 
     // Read any remaining 16-bit aligned byte
     if (offset < EepSize) {
-        eep_read_16(four_byte_count, (uint16_t*)(pBuffer + offset));
+        eep_read_16(four_byte_count, (uint16_t*)(g_pBuffer + offset));
     }
     printf("Ok\n");
 
-    printf("Write data to file.... \n");
-    fflush(stdout);
+    if (EepOptions.bSerialNumber == false) {
+      printf("Write data to file.... \n");
+      fflush(stdout);
 
-    // Open the file to write
-    pFile = fopen(EepOptions.FileName, "wb");
-    if (pFile == NULL) {
-        return EEP_FAIL;
+      // Open the file to write
+      pFile = fopen(EepOptions.FileName, "wb");
+      if (pFile == NULL) {
+          return EEP_FAIL;
+      }
+
+      // Write buffer to file
+      fwrite(
+          g_pBuffer,        // Buffer to write
+          sizeof(uint8_t),     // Item size
+          EepSize,        // Buffer size
+          pFile           // File pointer
+          );
+
+      // Close the file
+      fclose(pFile);
+    } else { // EepOptions.bSerialNumber == true
+      // Save serial number
+      for (uint8_t i = 0; i < sizeof(g_pBuffer); i++) {
+        if (g_pBuffer[i] == 0x42) {
+          EepOptions.SerialNumber[0] = g_pBuffer[i+1];
+          EepOptions.SerialNumber[1] = g_pBuffer[i+2];
+          EepOptions.SerialNumber[2] = g_pBuffer[i+3];
+          EepOptions.SerialNumber[3] = g_pBuffer[i+4];
+          break;
+        }
+      }
     }
 
-    // Write buffer to file
-    fwrite(
-        pBuffer,        // Buffer to write
-        sizeof(uint8_t),     // Item size
-        EepSize,        // Buffer size
-        pFile           // File pointer
-        );
-
-    // Close the file
-    fclose(pFile);
-
     // Release the buffer
-    if (pBuffer != NULL) {
-        free(pBuffer);
+    if (g_pBuffer != NULL) {
+        free(g_pBuffer);
     }
 
     printf("Ok (%s)\n", EepOptions.FileName);
@@ -1309,8 +1366,8 @@ static uint8_t EepromFileSave(void)
 static uint8_t EepFile(void)
 {
     printf("Function: %s\n", __func__);
+#ifndef ADNA
     int status;
-
     // Attempt to set EEPROM address width if requested
     if (EepOptions.EepWidthSet != 0) {
         printf("Set address width..... \n");
@@ -1327,6 +1384,7 @@ static uint8_t EepFile(void)
             printf("Ok (%d-byte)\n", EepOptions.EepWidthSet);
         }
     }
+#endif // ADNA
 
     if (EepOptions.bLoadFile) {
         return EepromFileLoad();
@@ -1414,20 +1472,26 @@ static void DisplayHelp(void)
 static uint8_t ProcessCommandLine(int argc, char *argv[])
 {
     uint16_t i;
+#ifndef ADNA
     char *pToken;
     bool bChipTypeValid;
+#endif // ADNA
     bool bGetFileName;
+    bool bGetSerialNumber;
+#ifndef ADNA
     bool bGetChipType;
     bool bGetEepWidth;
     bool bGetByteCount;
     bool bGetDeviceNum;
-
+#endif // ADNA
     bGetFileName  = false;
+    bGetSerialNumber = false;
+#ifndef ADNA
     bGetChipType  = false;
     bGetEepWidth  = false;
     bGetDeviceNum = false;
     bGetByteCount = false;
-
+#endif // ADNA
     for (i = 1; i < argc; i++) {
         if (bGetFileName) {
             if (argv[i][0] == '-') {
@@ -1440,7 +1504,30 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 
             // Flag parameter retrieved
             bGetFileName = false;
-        } else if (bGetChipType) {
+        } else if (bGetSerialNumber) {
+            if (argv[i][0] == '-') {
+                printf("ERROR: Serial number not specified\n");
+                return CMD_LINE_ERR;
+            }
+
+            if (strlen(argv[i]) != 8) {
+                printf("ERROR: Serial number input should be 8 characters long.\n");
+                return CMD_LINE_ERR;
+            }
+
+            if (!is_valid_hex(argv[i])) {
+                printf("ERROR: Invalid hexadecimal input. It should be a valid hexadecimal input (e.g., 0011AABB)\n");
+                return CMD_LINE_ERR;
+            }
+
+            // Get serial number
+            str_to_bin(EepOptions.SerialNumber, argv[i]);
+
+            // Flag parameter retrieved
+            bGetSerialNumber = false;
+        }
+#ifndef ADNA
+        else if (bGetChipType) {
             if (argv[i][0] == '-') {
                 printf("ERROR: PLX chip type not specified\n");
                 return CMD_LINE_ERR;
@@ -1516,7 +1603,9 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 
             // Flag parameter retrieved
             bGetByteCount = false;
-        } else if ((strcasecmp(argv[i], "-?") == 0) ||
+        }
+#endif // ADNA
+        else if ((strcasecmp(argv[i], "-?") == 0) ||
                    (strcasecmp(argv[i], "-h") == 0)) {
             
             DisplayHelp();
@@ -1530,10 +1619,13 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
             bGetFileName = true;
         } else if (strcasecmp(argv[i], "-s") == 0) {
             EepOptions.bLoadFile = false;
+            EepOptions.bSerialNumber = false;
 
             // Set flag to get file name
             bGetFileName = true;
-        } else if (strcasecmp(argv[i], "-p") == 0) {
+        } 
+#ifndef ADNA
+        else if (strcasecmp(argv[i], "-p") == 0) {
             bGetChipType = true;
         } else if (strcasecmp(argv[i], "-w") == 0) {
             bGetEepWidth = true;
@@ -1543,8 +1635,13 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
             bGetByteCount = true;
         } else if (strcasecmp(argv[i], "-i") == 0) {
             EepOptions.bIgnoreWarnings = true;
-        } else if (strcasecmp(argv[i], "-e") == 0) {
+        }
+#endif // ADNA
+        else if (strcasecmp(argv[i], "-e") == 0) {
             EepOptions.bListOnly = true;
+        } else if (strcasecmp(argv[i], "-n") == 0) {
+            EepOptions.bSerialNumber = true;
+            bGetSerialNumber = true;
         } else {
             printf("ERROR: Invalid argument \'%s\'\n", argv[i]);
             return CMD_LINE_ERR;
@@ -1557,6 +1654,11 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
                 return CMD_LINE_ERR;
             }
 
+            if (bGetSerialNumber) {
+                printf("ERROR: Serial number not specified\n");
+                return CMD_LINE_ERR;
+            }
+#ifndef ADNA
             if (bGetChipType) {
                 printf("ERROR: PLX chip type not specified\n");
                 return CMD_LINE_ERR;
@@ -1576,6 +1678,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
                 printf("ERROR: Extra byte count not specified\n");
                 return CMD_LINE_ERR;
             }
+#endif // ADNA
         }
     }
 
@@ -1585,6 +1688,8 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
     } else if ((EepOptions.bLoadFile == 0xFF) || (EepOptions.FileName[0] == '\0')) {
         printf("ERROR: EEPROM operation not specified. Use 'adna -h' for usage.\n");
         return EXIT_FAILURE;
+    } else if ((EepOptions.bLoadFile == false) || (EepOptions.bSerialNumber == true)) {
+        printf("WARNING: Serial number parameter on Save command will be ignored.\n");
     } else {}
 
     return EXIT_SUCCESS;

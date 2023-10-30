@@ -111,7 +111,7 @@ enum access {
 };
 
 int eep_read_status_reg(void);
-int eep_set_address_width(uint8_t width);
+// int eep_set_address_width(uint8_t width);
 void eep_read(uint32_t offset, uint32_t *read_buffer);
 void eep_read_16(uint32_t offset, uint16_t *read_buffer);
 void eep_write(uint32_t offset, uint32_t write_buffer);

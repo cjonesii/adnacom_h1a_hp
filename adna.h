@@ -55,14 +55,18 @@ struct device {
 struct eep_options {
     bool bVerbose;
     int bLoadFile;
-    bool bIgnoreWarnings;
     char    FileName[255];
+    char    SerialNumber[4];
+#ifndef ADNA
     int8_t      DeviceNumber;
+    bool bIgnoreWarnings;
     u8      EepWidthSet;
     u16     LimitPlxChip;
     u8      LimitPlxRevision;
+#endif
     u16     ExtraBytes;
     bool bListOnly;
+    bool bSerialNumber;
 };
 
 extern struct device *first_dev;
