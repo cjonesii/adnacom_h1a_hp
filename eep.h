@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "adna.h"
 
 #define EEP_STAT_N_CTRL_ADDR    (0x260)
 #define EEP_BUFFER_ADDR         (0x264)

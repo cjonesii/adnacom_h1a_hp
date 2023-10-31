@@ -62,40 +62,6 @@ struct adnatool_pci_device {
 
 };
 
-
-/*** PCI devices and access to their config space ***/
-
-struct device {
-  struct device *next;
-  struct pci_dev *dev;
-  /* Bus topology calculated by grow_tree() */
-  struct device *bus_next;
-  struct bus *parent_bus;
-  struct bridge *bridge;
-  /* Cache */
-  unsigned int config_cached, config_bufsize;
-  byte *config;				/* Cached configuration space data */
-  byte *present;			/* Maps which configuration bytes are present */
-  int NumDevice;
-};
-
-struct bridge {
-  struct bridge *chain;			/* Single-linked list of bridges */
-  struct bridge *next, *child;		/* Tree of bridges */
-  struct bus *first_bus;		/* List of buses connected to this bridge */
-  unsigned int domain;
-  unsigned int primary, secondary, subordinate;	/* Bus numbers */
-  struct device *br_dev;
-};
-
-struct bus {
-  unsigned int domain;
-  unsigned int number;
-  struct bus *sibling;
-  struct bridge *parent_bridge;
-  struct device *first_dev, **last_dev;
-};
-
 struct eep_options {
   bool bVerbose;
   int bLoadFile;
