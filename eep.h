@@ -110,10 +110,4 @@ enum access {
     REG_READ
 };
 
-void eep_read(struct device *d, uint32_t offset, uint32_t *read_buffer, bool verbose);
-void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer, bool verbose);
-void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer, bool verbose);
-void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer, bool verbose);
-void eep_init(struct device *d, bool verbose);
-
 #endif // __EEP_H__

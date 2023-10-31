@@ -97,44 +97,169 @@ struct bus {
 };
 
 struct eep_options {
-    bool bVerbose;
-    int bLoadFile;
-    char    FileName[255];
-    char    SerialNumber[4];
-#ifndef ADNA
-    int8_t      DeviceNumber;
-    bool bIgnoreWarnings;
-    u8      EepWidthSet;
-    u16     LimitPlxChip;
-    u8      LimitPlxRevision;
-#endif
-    u16     ExtraBytes;
-    bool bListOnly;
-    bool bSerialNumber;
+  bool bVerbose;
+  int bLoadFile;
+  char    FileName[255];
+  char    SerialNumber[4];
+  u16     ExtraBytes;
+  bool bListOnly;
+  bool bSerialNumber;
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
 bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
+uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset);
+
+void eep_read(struct device *d, uint32_t offset, uint32_t *read_buffer, bool verbose);
+void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer, bool verbose);
+void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer, bool verbose);
+void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer, bool verbose);
+void eep_init(struct device *d, bool verbose);
+
+static void check_for_ready_or_done(struct device *d, bool verbose)
+{
+    volatile uint32_t eepCmdStatus = EEP_CMD_STAT_MAX;
+
+    do {
+        for (volatile int delay = 0; delay < 5000; delay++) {}
+        // eepCmdStatus = (pcimem(REG_READ, EEP_STAT_N_CTRL_ADDR, 0) >> EEP_CMD_STATUS_OFFSET) & 1;
+        eepCmdStatus = (pci_eep_read_status_reg(d, EEP_STAT_N_CTRL_ADDR) >> EEP_CMD_STATUS_OFFSET) & 1;
+    } while (CMD_COMPLETE != eepCmdStatus);
+    if (verbose)
+        printf("Controller is ready\n");
+}
+
+static void eep_data(struct device *d, uint32_t cmd, uint32_t *buffer, bool verbose)
+{
+    if (verbose)
+        printf("Function: %s\n", __func__);
+
+    check_for_ready_or_done(d, verbose);
+    if (verbose)
+        printf("  EEPROM Control: 0x%08x\n", cmd);
+    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, cmd);
+
+    check_for_ready_or_done(d, verbose);
+
+    if (RD_4B_FR_BLKADDR_TO_BUFF == ((cmd >> EEP_CMD_OFFSET) & 0x7)) {
+        *buffer = pci_eep_read_status_reg(d, EEP_BUFFER_ADDR);
+        if (verbose)
+            printf("Read buffer: 0x%08x\n", *buffer);
+    }
+}
+
+void eep_read(struct device *d, uint32_t offset, uint32_t *read_buffer, bool verbose)
+{
+    if (verbose)
+        printf("Function: %s\n", __func__);
+    union eep_status_and_control_reg ctrl_reg = {0};
+    // Section 6.8.2 step#2
+    ctrl_reg.cmd_n_status_struct.cmd = RD_4B_FR_BLKADDR_TO_BUFF;
+    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
+    // Section 6.8.2 step#3 and step#4
+    eep_data(d, ctrl_reg.cmd_u32, read_buffer, verbose);
+    fflush(stdout);
+}
+
+void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer, bool verbose)
+{
+    if (verbose)
+        printf("Function: %s\n", __func__);
+    union eep_status_and_control_reg ctrl_reg = {0};
+    uint32_t buffer_32 = 0;
+
+    ctrl_reg.cmd_n_status_struct.cmd = RD_4B_FR_BLKADDR_TO_BUFF;
+    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
+    eep_data(d, ctrl_reg.cmd_u32, &buffer_32, verbose);
+
+    *read_buffer = buffer_32 & 0xFFFF;
+    fflush(stdout);
+}
+
+void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer, bool verbose)
+{
+    if (verbose)
+        printf("Function: %s\n", __func__);
+    union eep_status_and_control_reg ctrl_reg = {0};
+
+    check_for_ready_or_done(d, verbose);
+    // Section 6.8.1 step#2
+    pci_write_long(d->dev, EEP_BUFFER_ADDR, write_buffer);
+    check_for_ready_or_done(d, verbose);
+    // Section 6.8.1 step#3
+    ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
+    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
+    // Section 6.8.1 step#4
+    ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
+    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
+    eep_data(d, ctrl_reg.cmd_u32, NULL, verbose);
+
+    fflush(stdout);
+}
+
+void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer, bool verbose)
+{
+    if (verbose)
+        printf("Function: %s\n", __func__);
+    union eep_status_and_control_reg ctrl_reg = {0};
+    uint32_t buffer_32 = (uint32_t)write_buffer;
+
+    check_for_ready_or_done(d, verbose);
+    // Section 6.8.1 step#2
+    pci_write_long(d->dev, EEP_BUFFER_ADDR, buffer_32);
+    check_for_ready_or_done(d, verbose);
+    // Section 6.8.1 step#3
+    ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
+    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
+    // Section 6.8.1 step#4
+    ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
+    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
+    eep_data(d, ctrl_reg.cmd_u32, NULL, verbose);
+
+    fflush(stdout);
+}
+
+void eep_init(struct device *d, bool verbose)
+{
+    if (verbose)
+        printf("Function: %s\n", __func__);
+    union eep_status_and_control_reg ctrl_reg = {0};
+
+    // Section 6.8.3 step#2
+    pci_write_long(d->dev, EEP_BUFFER_ADDR, EEP_INIT_VAL);
+    // Section 6.8.3 step#3
+    ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
+    ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
+    ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
+    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
+    // Section 6.8.3 step#4
+    ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
+    ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
+    ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
+    eep_data(d, ctrl_reg.cmd_u32, NULL, verbose);
+
+    fflush(stdout);
+}
 
 uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset)
 {
-    int32_t readLong = 0;
-    unsigned int cnt;
-    /* Read the Serial EEPROM Status and Control register */
-    cnt = d->config_cached;
-    config_fetch(d, cnt, 512);
-    readLong = get_conf_long(d, offset);
-    fflush(stdout);
-    return readLong;
+  int32_t readLong = 0;
+  unsigned int cnt;
+  /* Read the Serial EEPROM Status and Control register */
+  cnt = d->config_cached;
+  config_fetch(d, cnt, 512);
+  readLong = get_conf_long(d, offset);
+  fflush(stdout);
+  return readLong;
 }
 
 int pci_get_devtype(struct pci_dev *pdev)
 {
-        struct pci_cap *cap;
-        cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
-        int devtype = pci_read_word(pdev, cap->addr + PCI_EXP_FLAGS);
-        return ((devtype & PCI_EXP_FLAGS_TYPE) >> 4) & 0xFF;
+  struct pci_cap *cap;
+  cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+  int devtype = pci_read_word(pdev, cap->addr + PCI_EXP_FLAGS);
+  return ((devtype & PCI_EXP_FLAGS_TYPE) >> 4) & 0xFF;
 }
 
 bool pci_is_upstream(struct pci_dev *pdev)
@@ -215,14 +340,7 @@ scan_device(struct pci_dev *p)
     seen_errors++;
     return NULL;
   }
-#ifndef ADNA
-  if ((d->config[PCI_HEADER_TYPE] & 0x7f) == PCI_HEADER_TYPE_CARDBUS) {
-    /* For cardbus bridges, we need to fetch 64 bytes more to get the
-      * full standard header... */
-    if (config_fetch(d, 64, 64))
-      d->config_cached += 64;
-  }
-#endif
+
   pci_setup_cache(p, d->config, d->config_cached);
   pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_CLASS);
   return d;
@@ -656,100 +774,6 @@ show_htype0(struct device *d)
 static void
 show_htype1(struct device *d)
 {
-#ifndef ADNA
-  u32 io_base = get_conf_byte(d, PCI_IO_BASE);
-  u32 io_limit = get_conf_byte(d, PCI_IO_LIMIT);
-  u32 io_type = io_base & PCI_IO_RANGE_TYPE_MASK;
-  u32 mem_base = get_conf_word(d, PCI_MEMORY_BASE);
-  u32 mem_limit = get_conf_word(d, PCI_MEMORY_LIMIT);
-  u32 mem_type = mem_base & PCI_MEMORY_RANGE_TYPE_MASK;
-  u32 pref_base = get_conf_word(d, PCI_PREF_MEMORY_BASE);
-  u32 pref_limit = get_conf_word(d, PCI_PREF_MEMORY_LIMIT);
-  u32 pref_type = pref_base & PCI_PREF_RANGE_TYPE_MASK;
-  word sec_stat = get_conf_word(d, PCI_SEC_STATUS);
-  word brc = get_conf_word(d, PCI_BRIDGE_CONTROL);
-
-  show_bases(d, 2);
-  printf("\tBus: primary=%02x, secondary=%02x, subordinate=%02x, sec-latency=%d\n",
-	 get_conf_byte(d, PCI_PRIMARY_BUS),
-	 get_conf_byte(d, PCI_SECONDARY_BUS),
-	 get_conf_byte(d, PCI_SUBORDINATE_BUS),
-	 get_conf_byte(d, PCI_SEC_LATENCY_TIMER));
-
-  if (io_type != (io_limit & PCI_IO_RANGE_TYPE_MASK) ||
-      (io_type != PCI_IO_RANGE_TYPE_16 && io_type != PCI_IO_RANGE_TYPE_32))
-    printf("\t!!! Unknown I/O range types %x/%x\n", io_base, io_limit);
-  else
-    {
-      io_base = (io_base & PCI_IO_RANGE_MASK) << 8;
-      io_limit = (io_limit & PCI_IO_RANGE_MASK) << 8;
-      if (io_type == PCI_IO_RANGE_TYPE_32)
-	{
-	  io_base |= (get_conf_word(d, PCI_IO_BASE_UPPER16) << 16);
-	  io_limit |= (get_conf_word(d, PCI_IO_LIMIT_UPPER16) << 16);
-	}
-      show_range("\tI/O behind bridge", io_base, io_limit+0xfff, 0);
-    }
-
-  if (mem_type != (mem_limit & PCI_MEMORY_RANGE_TYPE_MASK) ||
-      mem_type)
-    printf("\t!!! Unknown memory range types %x/%x\n", mem_base, mem_limit);
-  else
-    {
-      mem_base = (mem_base & PCI_MEMORY_RANGE_MASK) << 16;
-      mem_limit = (mem_limit & PCI_MEMORY_RANGE_MASK) << 16;
-      show_range("\tMemory behind bridge", mem_base, mem_limit + 0xfffff, 0);
-    }
-
-  if (pref_type != (pref_limit & PCI_PREF_RANGE_TYPE_MASK) ||
-      (pref_type != PCI_PREF_RANGE_TYPE_32 && pref_type != PCI_PREF_RANGE_TYPE_64))
-    printf("\t!!! Unknown prefetchable memory range types %x/%x\n", pref_base, pref_limit);
-  else
-    {
-      u64 pref_base_64 = (pref_base & PCI_PREF_RANGE_MASK) << 16;
-      u64 pref_limit_64 = (pref_limit & PCI_PREF_RANGE_MASK) << 16;
-      if (pref_type == PCI_PREF_RANGE_TYPE_64)
-	{
-	  pref_base_64 |= (u64) get_conf_long(d, PCI_PREF_BASE_UPPER32) << 32;
-	  pref_limit_64 |= (u64) get_conf_long(d, PCI_PREF_LIMIT_UPPER32) << 32;
-	}
-      show_range("\tPrefetchable memory behind bridge", pref_base_64, pref_limit_64 + 0xfffff, (pref_type == PCI_PREF_RANGE_TYPE_64));
-    }
-
-  if (verbose > 1)
-    printf("\tSecondary status: 66MHz%c FastB2B%c ParErr%c DEVSEL=%s >TAbort%c <TAbort%c <MAbort%c <SERR%c <PERR%c\n",
-	     FLAG(sec_stat, PCI_STATUS_66MHZ),
-	     FLAG(sec_stat, PCI_STATUS_FAST_BACK),
-	     FLAG(sec_stat, PCI_STATUS_PARITY),
-	     ((sec_stat & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_SLOW) ? "slow" :
-	     ((sec_stat & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_MEDIUM) ? "medium" :
-	     ((sec_stat & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_FAST) ? "fast" : "??",
-	     FLAG(sec_stat, PCI_STATUS_SIG_TARGET_ABORT),
-	     FLAG(sec_stat, PCI_STATUS_REC_TARGET_ABORT),
-	     FLAG(sec_stat, PCI_STATUS_REC_MASTER_ABORT),
-	     FLAG(sec_stat, PCI_STATUS_SIG_SYSTEM_ERROR),
-	     FLAG(sec_stat, PCI_STATUS_DETECTED_PARITY));
-
-  show_rom(d, PCI_ROM_ADDRESS1);
-
-  if (verbose > 1)
-    {
-      printf("\tBridgeCtl: Parity%c SERR%c NoISA%c VGA%c VGA16%c MAbort%c >Reset%c FastB2B%c\n",
-	FLAG(brc, PCI_BRIDGE_CTL_PARITY),
-	FLAG(brc, PCI_BRIDGE_CTL_SERR),
-	FLAG(brc, PCI_BRIDGE_CTL_NO_ISA),
-	FLAG(brc, PCI_BRIDGE_CTL_VGA),
-	FLAG(brc, PCI_BRIDGE_CTL_VGA_16BIT),
-	FLAG(brc, PCI_BRIDGE_CTL_MASTER_ABORT),
-	FLAG(brc, PCI_BRIDGE_CTL_BUS_RESET),
-	FLAG(brc, PCI_BRIDGE_CTL_FAST_BACK));
-      printf("\t\tPriDiscTmr%c SecDiscTmr%c DiscTmrStat%c DiscTmrSERREn%c\n",
-	FLAG(brc, PCI_BRIDGE_CTL_PRI_DISCARD_TIMER),
-	FLAG(brc, PCI_BRIDGE_CTL_SEC_DISCARD_TIMER),
-	FLAG(brc, PCI_BRIDGE_CTL_DISCARD_TIMER_STATUS),
-	FLAG(brc, PCI_BRIDGE_CTL_DISCARD_TIMER_SERR_EN));
-    }
-#endif // ADNA
   show_caps(d, PCI_CAPABILITY_LIST);
 }
 
@@ -878,100 +902,7 @@ show_verbose(struct device *d)
 
   if (dt_node = pci_get_string_property(p, PCI_FILL_DT_NODE))
     printf("\tDevice tree node: %s\n", dt_node);
-#ifndef ADNA
-  if (verbose > 1)
-    {
-      printf("\tControl: I/O%c Mem%c BusMaster%c SpecCycle%c MemWINV%c VGASnoop%c ParErr%c Stepping%c SERR%c FastB2B%c DisINTx%c\n",
-	     FLAG(cmd, PCI_COMMAND_IO),
-	     FLAG(cmd, PCI_COMMAND_MEMORY),
-	     FLAG(cmd, PCI_COMMAND_MASTER),
-	     FLAG(cmd, PCI_COMMAND_SPECIAL),
-	     FLAG(cmd, PCI_COMMAND_INVALIDATE),
-	     FLAG(cmd, PCI_COMMAND_VGA_PALETTE),
-	     FLAG(cmd, PCI_COMMAND_PARITY),
-	     FLAG(cmd, PCI_COMMAND_WAIT),
-	     FLAG(cmd, PCI_COMMAND_SERR),
-	     FLAG(cmd, PCI_COMMAND_FAST_BACK),
-	     FLAG(cmd, PCI_COMMAND_DISABLE_INTx));
-      printf("\tStatus: Cap%c 66MHz%c UDF%c FastB2B%c ParErr%c DEVSEL=%s >TAbort%c <TAbort%c <MAbort%c >SERR%c <PERR%c INTx%c\n",
-	     FLAG(status, PCI_STATUS_CAP_LIST),
-	     FLAG(status, PCI_STATUS_66MHZ),
-	     FLAG(status, PCI_STATUS_UDF),
-	     FLAG(status, PCI_STATUS_FAST_BACK),
-	     FLAG(status, PCI_STATUS_PARITY),
-	     ((status & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_SLOW) ? "slow" :
-	     ((status & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_MEDIUM) ? "medium" :
-	     ((status & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_FAST) ? "fast" : "??",
-	     FLAG(status, PCI_STATUS_SIG_TARGET_ABORT),
-	     FLAG(status, PCI_STATUS_REC_TARGET_ABORT),
-	     FLAG(status, PCI_STATUS_REC_MASTER_ABORT),
-	     FLAG(status, PCI_STATUS_SIG_SYSTEM_ERROR),
-	     FLAG(status, PCI_STATUS_DETECTED_PARITY),
-	     FLAG(status, PCI_STATUS_INTx));
-      if (cmd & PCI_COMMAND_MASTER)
-	{
-	  printf("\tLatency: %d", latency);
-	  if (min_gnt || max_lat)
-	    {
-	      printf(" (");
-	      if (min_gnt)
-		printf("%dns min", min_gnt*250);
-	      if (min_gnt && max_lat)
-		printf(", ");
-	      if (max_lat)
-		printf("%dns max", max_lat*250);
-	      putchar(')');
-	    }
-	  if (cache_line)
-	    printf(", Cache Line Size: %d bytes", cache_line * 4);
-	  putchar('\n');
-	}
-      if (int_pin || irq)
-	printf("\tInterrupt: pin %c routed to IRQ " PCIIRQ_FMT "\n",
-	       (int_pin ? 'A' + int_pin - 1 : '?'), irq);
-      if (p->numa_node != -1)
-	printf("\tNUMA node: %d\n", p->numa_node);
-      if (iommu_group = pci_get_string_property(p, PCI_FILL_IOMMU_GROUP))
-	printf("\tIOMMU group: %s\n", iommu_group);
-    }
-  else
-    {
-      printf("\tFlags: ");
-      if (cmd & PCI_COMMAND_MASTER)
-	printf("bus master, ");
-      if (cmd & PCI_COMMAND_VGA_PALETTE)
-	printf("VGA palette snoop, ");
-      if (cmd & PCI_COMMAND_WAIT)
-	printf("stepping, ");
-      if (cmd & PCI_COMMAND_FAST_BACK)
-	printf("fast Back2Back, ");
-      if (status & PCI_STATUS_66MHZ)
-	printf("66MHz, ");
-      if (status & PCI_STATUS_UDF)
-	printf("user-definable features, ");
-      printf("%s devsel",
-	     ((status & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_SLOW) ? "slow" :
-	     ((status & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_MEDIUM) ? "medium" :
-	     ((status & PCI_STATUS_DEVSEL_MASK) == PCI_STATUS_DEVSEL_FAST) ? "fast" : "??");
-      if (cmd & PCI_COMMAND_MASTER)
-	printf(", latency %d", latency);
-      if (irq)
-	printf(", IRQ " PCIIRQ_FMT, irq);
-      if (p->numa_node != -1)
-	printf(", NUMA node %d", p->numa_node);
-      if (iommu_group = pci_get_string_property(p, PCI_FILL_IOMMU_GROUP))
-	printf(", IOMMU group %s", iommu_group);
-      putchar('\n');
-    }
 
-  if (bist & PCI_BIST_CAPABLE)
-    {
-      if (bist & PCI_BIST_START)
-	printf("\tBIST is running\n");
-      else
-	printf("\tBIST result: %02x\n", bist & PCI_BIST_CODE_MASK);
-    }
-#endif // ADNA
   switch (htype)
     {
     case PCI_HEADER_TYPE_NORMAL:
