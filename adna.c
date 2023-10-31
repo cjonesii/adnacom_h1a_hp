@@ -17,6 +17,8 @@
 #include <unistd.h>
 #include <termios.h>
 #include <ctype.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
@@ -77,118 +79,189 @@ bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
 uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset);
 
-void eep_read(struct device *d, uint32_t offset, uint32_t *read_buffer, bool verbose);
-void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer, bool verbose);
-void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer, bool verbose);
-void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer, bool verbose);
-void eep_init(struct device *d, bool verbose);
+void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer);
+void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
+void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer);
+void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer);
+void eep_init(struct device *d);
 
-static void check_for_ready_or_done(struct device *d, bool verbose)
+
+static void pci_get_res0(struct pci_dev *pdev, char *path, size_t pathlen)
+{
+        snprintf(path, 
+                 pathlen,
+                 "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
+                 pdev->domain,
+                 pdev->bus,
+                 pdev->dev,
+                 pdev->func);
+        return;
+}
+
+static int pcimem(struct pci_dev *pdev, int access, uint32_t reg, uint32_t data)
+{
+  char resource0[256] = {0};
+  int fd = 0xFF;
+  void *map_base, *virt_addr;
+  uint64_t read_result, writeval, prev_read_result = 0;
+  off_t target, target_base;
+  int verbose;
+  int read_result_dupped = 0;
+  int type_width = 4;
+  int map_size = 4096UL;
+
+  fflush(stdout);
+  pci_get_res0(pdev, resource0, sizeof(resource0));
+  target_base = target & ~(sysconf(_SC_PAGE_SIZE) - 1);
+  if (target + 1 * type_width - target_base > map_size)
+    map_size = target + 1 * type_width - target_base;
+
+  map_base = mmap(0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target_base);
+  if (map_base == (void *)-1) {
+    fprintf(stderr, "map failed for resource0\n");
+    exit(-1);
+  }
+
+  fflush(stdout);
+
+
+  virt_addr = map_base + target + 1*type_width - target_base;
+  read_result = *((uint32_t *) virt_addr);
+
+  if (verbose)
+      printf("Value at offset 0x%X (%p): 0x%0*lX\n", (int) target + 1*type_width, virt_addr, type_width*2, read_result);
+  else {
+      if (read_result != prev_read_result || 1 == 0) {
+              printf("0x%04X: 0x%0*lX\n", (int)(target + 1*type_width), type_width*2, read_result);
+              read_result_dupped = 0;
+          } else {
+              if (!read_result_dupped)
+                  printf("...\n");
+              read_result_dupped = 1;
+      }
+  }
+  prev_read_result = read_result;
+
+  fflush(stdout);
+
+  if (REG_WRITE == access) {
+    writeval = (uint64_t)data;
+    *((uint32_t *)virt_addr) = writeval;
+    read_result = *((uint32_t *)virt_addr);
+    printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
+           writeval, type_width, read_result);
+    fflush(stdout);
+  }
+
+  if (munmap(map_base, map_size) == -1)
+    exit(-1);
+  close(fd);
+  return read_result;
+}
+
+static void check_for_ready_or_done(struct device *d)
 {
     volatile uint32_t eepCmdStatus = EEP_CMD_STAT_MAX;
-
     do {
         for (volatile int delay = 0; delay < 5000; delay++) {}
-        // eepCmdStatus = (pcimem(REG_READ, EEP_STAT_N_CTRL_ADDR, 0) >> EEP_CMD_STATUS_OFFSET) & 1;
-        eepCmdStatus = (pci_eep_read_status_reg(d, EEP_STAT_N_CTRL_ADDR) >> EEP_CMD_STATUS_OFFSET) & 1;
+        eepCmdStatus = ((pcimem_r32(d->dev, EEP_STAT_N_CTRL_ADDR)) >> EEP_CMD_STATUS_OFFSET) & 1;
     } while (CMD_COMPLETE != eepCmdStatus);
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Controller is ready\n");
 }
 
-static void eep_data(struct device *d, uint32_t cmd, uint32_t *buffer, bool verbose)
+static void eep_data(struct device *d, uint32_t cmd, volatile uint32_t *buffer)
 {
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Function: %s\n", __func__);
 
-    check_for_ready_or_done(d, verbose);
-    if (verbose)
+    check_for_ready_or_done(d);
+    if (EepOptions.bVerbose)
         printf("  EEPROM Control: 0x%08x\n", cmd);
-    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, cmd);
-
-    check_for_ready_or_done(d, verbose);
+    pcimem_w32(d->dev, EEP_STAT_N_CTRL_ADDR, cmd);
+    check_for_ready_or_done(d);
 
     if (RD_4B_FR_BLKADDR_TO_BUFF == ((cmd >> EEP_CMD_OFFSET) & 0x7)) {
-        *buffer = pci_eep_read_status_reg(d, EEP_BUFFER_ADDR);
-        if (verbose)
+        *buffer = pcimem_r32(d->dev, EEP_BUFFER_ADDR);
+        if (EepOptions.bVerbose)
             printf("Read buffer: 0x%08x\n", *buffer);
     }
 }
 
-void eep_read(struct device *d, uint32_t offset, uint32_t *read_buffer, bool verbose)
+void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer)
 {
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Function: %s\n", __func__);
     union eep_status_and_control_reg ctrl_reg = {0};
     // Section 6.8.2 step#2
     ctrl_reg.cmd_n_status_struct.cmd = RD_4B_FR_BLKADDR_TO_BUFF;
     ctrl_reg.cmd_n_status_struct.blk_addr = offset;
     // Section 6.8.2 step#3 and step#4
-    eep_data(d, ctrl_reg.cmd_u32, read_buffer, verbose);
+    eep_data(d, ctrl_reg.cmd_u32, read_buffer);
     fflush(stdout);
 }
 
-void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer, bool verbose)
+void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer)
 {
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Function: %s\n", __func__);
     union eep_status_and_control_reg ctrl_reg = {0};
     uint32_t buffer_32 = 0;
 
     ctrl_reg.cmd_n_status_struct.cmd = RD_4B_FR_BLKADDR_TO_BUFF;
     ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    eep_data(d, ctrl_reg.cmd_u32, &buffer_32, verbose);
+    eep_data(d, ctrl_reg.cmd_u32, &buffer_32);
 
     *read_buffer = buffer_32 & 0xFFFF;
     fflush(stdout);
 }
 
-void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer, bool verbose)
+void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer)
 {
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Function: %s\n", __func__);
     union eep_status_and_control_reg ctrl_reg = {0};
 
-    check_for_ready_or_done(d, verbose);
+    check_for_ready_or_done(d);
     // Section 6.8.1 step#2
     pci_write_long(d->dev, EEP_BUFFER_ADDR, write_buffer);
-    check_for_ready_or_done(d, verbose);
+    check_for_ready_or_done(d);
     // Section 6.8.1 step#3
     ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
     pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
     // Section 6.8.1 step#4
     ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
     ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    eep_data(d, ctrl_reg.cmd_u32, NULL, verbose);
+    eep_data(d, ctrl_reg.cmd_u32, NULL);
 
     fflush(stdout);
 }
 
-void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer, bool verbose)
+void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer)
 {
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Function: %s\n", __func__);
     union eep_status_and_control_reg ctrl_reg = {0};
     uint32_t buffer_32 = (uint32_t)write_buffer;
 
-    check_for_ready_or_done(d, verbose);
+    check_for_ready_or_done(d);
     // Section 6.8.1 step#2
     pci_write_long(d->dev, EEP_BUFFER_ADDR, buffer_32);
-    check_for_ready_or_done(d, verbose);
+    check_for_ready_or_done(d);
     // Section 6.8.1 step#3
     ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
     pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
     // Section 6.8.1 step#4
     ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
     ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    eep_data(d, ctrl_reg.cmd_u32, NULL, verbose);
+    eep_data(d, ctrl_reg.cmd_u32, NULL);
 
     fflush(stdout);
 }
 
-void eep_init(struct device *d, bool verbose)
+void eep_init(struct device *d)
 {
-    if (verbose)
+    if (EepOptions.bVerbose)
         printf("Function: %s\n", __func__);
     union eep_status_and_control_reg ctrl_reg = {0};
 
@@ -203,7 +276,7 @@ void eep_init(struct device *d, bool verbose)
     ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
     ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
     ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
-    eep_data(d, ctrl_reg.cmd_u32, NULL, verbose);
+    eep_data(d, ctrl_reg.cmd_u32, NULL);
 
     fflush(stdout);
 }
@@ -1140,8 +1213,8 @@ static uint8_t EepromFileLoad(struct device *d)
         value = *(uint32_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
-        eep_write(d, four_byte_count, value, EepOptions.bVerbose);
-        eep_read(d, four_byte_count, &Verify_Value, EepOptions.bVerbose);
+        eep_write(d, four_byte_count, value);
+        eep_read(d, four_byte_count, &Verify_Value);
 
         if (Verify_Value != value) {
             printf("ERROR: offset:%02X  wrote:%08X  read:%08X\n",
@@ -1157,8 +1230,8 @@ static uint8_t EepromFileLoad(struct device *d)
         value = *(uint16_t*)(g_pBuffer + offset);
 
         // Write value & read back to verify
-        eep_write_16(d, offset, (uint16_t)value, EepOptions.bVerbose);
-        eep_read_16(d, offset, &Verify_Value_16, EepOptions.bVerbose);
+        eep_write_16(d, offset, (uint16_t)value);
+        eep_read_16(d, offset, &Verify_Value_16);
 
         if (Verify_Value_16 != (uint16_t)value) {
             printf("ERROR: offset:%02X  wrote:%04X  read:%04X\n",
@@ -1180,7 +1253,7 @@ _Exit_File_Load:
 static uint8_t EepromFileSave(struct device *d)
 {
     printf("Function: %s\n", __func__);
-    uint32_t value = 0;
+    volatile uint32_t value = 0;
     uint32_t offset;
     uint8_t four_byte_count;
     uint32_t EepSize;
@@ -1194,7 +1267,7 @@ static uint8_t EepromFileSave(struct device *d)
     EepSize = sizeof(uint32_t);
 
     // Get EEPROM header
-    eep_read(d, 0x0, &value, EepOptions.bVerbose);
+    eep_read(d, 0x0, &value);
 
     // Add register byte count
     EepSize += (value >> 16);
@@ -1225,12 +1298,12 @@ static uint8_t EepromFileSave(struct device *d)
     // Each EEPROM read via BAR0 is 4 bytes so offset is represented in bytes (aligned in 32 bits)
     // while four_byte_count is represented in count of 4-byte access
     for (offset = 0, four_byte_count = 0; offset < (EepSize & ~0x3); offset += sizeof(uint32_t), four_byte_count++) {
-        eep_read(d, four_byte_count, (uint32_t*)(g_pBuffer + offset), EepOptions.bVerbose);
+        eep_read(d, four_byte_count, (uint32_t*)(g_pBuffer + offset));
     }
 
     // Read any remaining 16-bit aligned byte
     if (offset < EepSize) {
-        eep_read_16(d, four_byte_count, (uint16_t*)(g_pBuffer + offset), EepOptions.bVerbose);
+        eep_read_16(d, four_byte_count, (uint16_t*)(g_pBuffer + offset));
     }
     printf("Ok\n");
 
@@ -1279,32 +1352,13 @@ static uint8_t EepromFileSave(struct device *d)
 
 static uint8_t EepFile(struct device *d)
 {
+  if (EepOptions.bVerbose)
     printf("Function: %s\n", __func__);
-#ifndef ADNA
-    int status;
-    // Attempt to set EEPROM address width if requested
-    if (EepOptions.EepWidthSet != 0) {
-        printf("Set address width..... \n");
-        fflush(stdout);
-
-        status = eep_set_address_width(EepOptions.EepWidthSet);
-
-        if (0 == status) {
-            printf("ERROR: Unable to set to %dB addressing\n", EepOptions.EepWidthSet);
-            if (EepOptions.bIgnoreWarnings == false) {
-                return EEP_WIDTH_ERROR;
-            }
-        } else {
-            printf("Ok (%d-byte)\n", EepOptions.EepWidthSet);
-        }
-    }
-#endif // ADNA
-
-    if (EepOptions.bLoadFile) {
-        return EepromFileLoad(d);
-    } else {
-        return EepromFileSave(d);
-    }
+  if (EepOptions.bLoadFile) {
+      return EepromFileLoad(d);
+  } else {
+      return EepromFileSave(d);
+  }
 }
 
 static void get_resource_name(struct pci_dev *p)
@@ -1346,7 +1400,7 @@ static int eep_process(int j)
             break;
             case PRSNT_INVALID:
                 printf("Present but invalid data/CRC error/blank\n");
-                eep_init(d, EepOptions.bVerbose);
+                eep_init(d);
                 printf("EEPROM initialization done, please restart your computer.\n");
             break;
             }
