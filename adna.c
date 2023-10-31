@@ -1252,7 +1252,7 @@ static uint8_t EepromFileLoad(struct device *d)
     printf("Ok (%dB)\n", (int)FileSize);
 
     // Load serial number
-    for (uint8_t i = 0; i < sizeof(g_pBuffer); i++) {
+    for (uint8_t i = 0; i < FileSize; i++) {
       if (g_pBuffer[i] == 0x42) {
         g_pBuffer[i+2] = EepOptions.SerialNumber[0];
         g_pBuffer[i+3] = EepOptions.SerialNumber[1];
@@ -1397,7 +1397,7 @@ static uint8_t EepromFileSave(struct device *d)
       fclose(pFile);
     } else { // EepOptions.bSerialNumber == true
       // Save serial number
-      for (uint8_t i = 0; i < sizeof(g_pBuffer); i++) {
+      for (uint8_t i = 0; i < EepSize); i++) {
         if (g_pBuffer[i] == 0x42) {
           EepOptions.SerialNumber[0] = g_pBuffer[i+2];
           EepOptions.SerialNumber[1] = g_pBuffer[i+3];
