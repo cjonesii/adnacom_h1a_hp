@@ -11,7 +11,6 @@
 #include <stdlib.h>
 #include <stdarg.h>
 #include "adna.h"
-#include "pcimem.h"
 #include <stdbool.h>
 #include "eep.h"
 #include <unistd.h>
@@ -19,6 +18,7 @@
 #include <ctype.h>
 #include <sys/mman.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
@@ -77,7 +77,6 @@ struct eep_options {
 int pci_get_devtype(struct pci_dev *pdev);
 bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
-uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset);
 
 void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer);
 void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
@@ -85,78 +84,154 @@ void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer);
 void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer);
 void eep_init(struct device *d);
 
+#define PRINT_ERROR \
+	do { \
+		fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", \
+		__LINE__, __FILE__, errno, strerror(errno)); exit(1); \
+	} while(0)
 
 static void pci_get_res0(struct pci_dev *pdev, char *path, size_t pathlen)
 {
-        snprintf(path, 
-                 pathlen,
-                 "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
-                 pdev->domain,
-                 pdev->bus,
-                 pdev->dev,
-                 pdev->func);
-        return;
+  snprintf(path, 
+          pathlen,
+          "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
+          pdev->domain,
+          pdev->bus,
+          pdev->dev,
+          pdev->func);
+  return;
 }
 
-static int pcimem(struct pci_dev *pdev, int access, uint32_t reg, uint32_t data)
+static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
 {
-  char resource0[256] = {0};
-  int fd = 0xFF;
+  int fd;
   void *map_base, *virt_addr;
   uint64_t read_result, writeval, prev_read_result = 0;
+  // char *filename;
   off_t target, target_base;
-  int verbose;
+  int access_type = 'w';
+  int items_count = 1;
+  int verbose = 0;
   int read_result_dupped = 0;
-  int type_width = 4;
+  int type_width;
+  int i;
   int map_size = 4096UL;
 
+  char filename[256] = "\0";
+  pci_get_res0(p, filename, sizeof(filename));
+  // strncpy(filename, resource0, strlen(resource0));
+  target = (off_t)reg;
+
+  switch (access_type)
+  {
+  case 'b':
+    type_width = 1;
+    break;
+  case 'h':
+    type_width = 2;
+    break;
+  case 'w':
+    type_width = 4;
+    break;
+  case 'd':
+    type_width = 8;
+    break;
+  default:
+    fprintf(stderr, "Illegal data type '%c'.\n", access_type);
+    exit(2);
+  }
+
+  if ((fd = open(filename, O_RDWR | O_SYNC)) == -1)
+    PRINT_ERROR;
+  printf("%s opened.\n", filename);
+  printf("Target offset is 0x%x, page size is %ld\n", (int)target, sysconf(_SC_PAGE_SIZE));
   fflush(stdout);
-  pci_get_res0(pdev, resource0, sizeof(resource0));
+
   target_base = target & ~(sysconf(_SC_PAGE_SIZE) - 1);
-  if (target + 1 * type_width - target_base > map_size)
-    map_size = target + 1 * type_width - target_base;
+  if (target + items_count * type_width - target_base > map_size)
+    map_size = target + items_count * type_width - target_base;
+
+  /* Map one page */
+  printf("mmap(%d, %d, 0x%x, 0x%x, %d, 0x%x)\n", 0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (int)target);
 
   map_base = mmap(0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target_base);
-  if (map_base == (void *)-1) {
-    fprintf(stderr, "map failed for resource0\n");
-    exit(-1);
-  }
-
+  if (map_base == (void *)-1)
+    PRINT_ERROR;
+  printf("PCI Memory mapped to address 0x%08lx.\n", (unsigned long)map_base);
   fflush(stdout);
 
+  for (i = 0; i < items_count; i++)
+  {
 
-  virt_addr = map_base + target + 1*type_width - target_base;
-  read_result = *((uint32_t *) virt_addr);
+    virt_addr = map_base + target + i * type_width - target_base;
+    switch (access_type)
+    {
+    case 'b':
+      read_result = *((uint8_t *)virt_addr);
+      break;
+    case 'h':
+      read_result = *((uint16_t *)virt_addr);
+      break;
+    case 'w':
+      read_result = *((uint32_t *)virt_addr);
+      break;
+    case 'd':
+      read_result = *((uint64_t *)virt_addr);
+      break;
+    }
 
-  if (verbose)
-      printf("Value at offset 0x%X (%p): 0x%0*lX\n", (int) target + 1*type_width, virt_addr, type_width*2, read_result);
-  else {
-      if (read_result != prev_read_result || 1 == 0) {
-              printf("0x%04X: 0x%0*lX\n", (int)(target + 1*type_width), type_width*2, read_result);
-              read_result_dupped = 0;
-          } else {
-              if (!read_result_dupped)
-                  printf("...\n");
-              read_result_dupped = 1;
+    if (verbose)
+      printf("Value at offset 0x%X (%p): 0x%0*lX\n", (int)target + i * type_width, virt_addr, type_width * 2, read_result);
+    else
+    {
+      if (read_result != prev_read_result || i == 0)
+      {
+        printf("0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
+        read_result_dupped = 0;
       }
+      else
+      {
+        if (!read_result_dupped)
+          printf("...\n");
+        read_result_dupped = 1;
+      }
+    }
+    prev_read_result = read_result;
   }
-  prev_read_result = read_result;
 
   fflush(stdout);
 
-  if (REG_WRITE == access) {
+  if (data)
+  {
     writeval = (uint64_t)data;
-    *((uint32_t *)virt_addr) = writeval;
-    read_result = *((uint32_t *)virt_addr);
+    switch (access_type)
+    {
+    case 'b':
+      *((uint8_t *)virt_addr) = writeval;
+      read_result = *((uint8_t *)virt_addr);
+      break;
+    case 'h':
+      *((uint16_t *)virt_addr) = writeval;
+      read_result = *((uint16_t *)virt_addr);
+      break;
+    case 'w':
+      *((uint32_t *)virt_addr) = writeval;
+      read_result = *((uint32_t *)virt_addr);
+      break;
+    case 'd':
+      *((uint64_t *)virt_addr) = writeval;
+      read_result = *((uint64_t *)virt_addr);
+      break;
+    }
     printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
            writeval, type_width, read_result);
     fflush(stdout);
   }
 
   if (munmap(map_base, map_size) == -1)
-    exit(-1);
+    PRINT_ERROR;
   close(fd);
-  return read_result;
+  return (data ? 0 : (uint32_t)read_result);
 }
 
 static void check_for_ready_or_done(struct device *d)
@@ -164,7 +239,7 @@ static void check_for_ready_or_done(struct device *d)
     volatile uint32_t eepCmdStatus = EEP_CMD_STAT_MAX;
     do {
         for (volatile int delay = 0; delay < 5000; delay++) {}
-        eepCmdStatus = ((pcimem_r32(d->dev, EEP_STAT_N_CTRL_ADDR)) >> EEP_CMD_STATUS_OFFSET) & 1;
+        eepCmdStatus = ((pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0)) >> EEP_CMD_STATUS_OFFSET) & 1;
     } while (CMD_COMPLETE != eepCmdStatus);
     if (EepOptions.bVerbose)
         printf("Controller is ready\n");
@@ -178,11 +253,11 @@ static void eep_data(struct device *d, uint32_t cmd, volatile uint32_t *buffer)
     check_for_ready_or_done(d);
     if (EepOptions.bVerbose)
         printf("  EEPROM Control: 0x%08x\n", cmd);
-    pcimem_w32(d->dev, EEP_STAT_N_CTRL_ADDR, cmd);
+    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, cmd);
     check_for_ready_or_done(d);
 
     if (RD_4B_FR_BLKADDR_TO_BUFF == ((cmd >> EEP_CMD_OFFSET) & 0x7)) {
-        *buffer = pcimem_r32(d->dev, EEP_BUFFER_ADDR);
+        *buffer = pcimem(d->dev, EEP_BUFFER_ADDR, 0);
         if (EepOptions.bVerbose)
             printf("Read buffer: 0x%08x\n", *buffer);
     }
@@ -279,18 +354,6 @@ void eep_init(struct device *d)
     eep_data(d, ctrl_reg.cmd_u32, NULL);
 
     fflush(stdout);
-}
-
-uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset)
-{
-  int32_t readLong = 0;
-  unsigned int cnt;
-  /* Read the Serial EEPROM Status and Control register */
-  cnt = d->config_cached;
-  config_fetch(d, cnt, 512);
-  readLong = get_conf_long(d, offset);
-  fflush(stdout);
-  return readLong;
 }
 
 int pci_get_devtype(struct pci_dev *pdev)
@@ -1361,24 +1424,6 @@ static uint8_t EepFile(struct device *d)
   }
 }
 
-static void get_resource_name(struct pci_dev *p)
-{
-    char g_h1a_us_port_fname[17] = "\0";
-
-    snprintf(g_h1a_us_port_fname,
-             (int)sizeof(g_h1a_us_port_fname),
-             "%04x:%02x:%02x.%d", 
-             p->domain,
-             p->bus,
-             p->dev,
-             p->func);
-
-    snprintf(g_h1a_us_port_bar0,
-             (int)sizeof(g_h1a_us_port_bar0),
-             "/sys/bus/pci/devices/%s/resource0",
-             g_h1a_us_port_fname);
-}
-
 static int eep_process(int j)
 {
     struct device *d;
@@ -1387,8 +1432,7 @@ static int eep_process(int j)
 
     for (d=first_dev; d; d=d->next) {
         if (d->NumDevice == j) {
-            get_resource_name(d->dev);
-            eep_present = (pci_eep_read_status_reg(d, EEP_STAT_N_CTRL_ADDR) >> EEP_PRSNT_OFFSET) & 3;;
+            eep_present = (pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0) >> EEP_PRSNT_OFFSET) & 3;;
 
             switch (eep_present) {
             case NOT_PRSNT:
@@ -1421,12 +1465,13 @@ static void DisplayHelp(void)
         "\n"
         "EEPROM file utility for Adnacom devices.\n"
         "\n"
-        " Usage: adna [-l|-s file | -e] [-v]\n"
+        " Usage: adna [-l|-s file | -e] [-n serial_num] [-v]\n"
         "\n"
         " Options:\n"
         "   -l | -s       Load (-l) file to EEPROM -OR- Save (-s) EEPROM to file\n"
         "   file          Specifies the file to load or save\n"
         "   -e            Enumerate (-e) Adnacom devices\n"
+        "   -n            Specifies the serial number to write\n"
         "   -v            Verbose output (for debug purposes)\n"
         "   -h or -?      This help screen\n"
         "\n"
@@ -1527,7 +1572,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
     } else if ((EepOptions.bLoadFile == 0xFF) || (EepOptions.FileName[0] == '\0')) {
         printf("ERROR: EEPROM operation not specified. Use 'adna -h' for usage.\n");
         return EXIT_FAILURE;
-    } else if ((EepOptions.bLoadFile == false) || (EepOptions.bSerialNumber == true)) {
+    } else if ((EepOptions.bLoadFile == false) && (EepOptions.bSerialNumber == true)) {
         printf("WARNING: Serial number parameter on Save command will be ignored.\n");
     } else {}
 
@@ -1556,7 +1601,7 @@ main(int argc, char **argv)
   pacc->error = die;
   pci_filter_init(pacc, &filter);
 
-  verbose = 2; // very verbose by default
+  verbose = 2; // very verbose by default (pci process)
   pci_init(pacc);
   scan_devices();
   sort_them(&NumDevices);

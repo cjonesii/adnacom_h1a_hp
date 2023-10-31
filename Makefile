@@ -69,7 +69,7 @@ force:
 lib/config.h lib/config.mk:
 	cd lib && ./configure
 
-adna: adna.o setpci.o ls-vpd.o ls-caps.o ls-caps-vendor.o ls-ecaps.o ls-kernel.o ls-tree.o ls-map.o common.o lib/$(PCILIB)
+adna: adna.o ls-vpd.o ls-caps.o ls-caps-vendor.o ls-ecaps.o ls-kernel.o ls-tree.o ls-map.o common.o lib/$(PCILIB)
 
 LSPCIINC=adna.h pciutils.h $(PCIINC)
 adna.o: adna.c $(LSPCIINC)
@@ -85,8 +85,6 @@ adna: LDLIBS+=$(LIBKMOD_LIBS)
 ls-kernel.o: CFLAGS+=$(LIBKMOD_CFLAGS)
 adna: adna.o lib/$(PCILIB)
 adna.o: adna.c $(PCIINC)
-
-setpci.o: setpci.c $(PCIINC)
 
 %: %.o
 	$(CC) $(LDFLAGS) $(TARGET_ARCH) $^ $(LDLIBS) -o $@
