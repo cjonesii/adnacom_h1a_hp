@@ -119,7 +119,6 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
 
   char filename[256] = "\0";
   pci_get_res0(p, filename, sizeof(filename));
-  // strncpy(filename, resource0, strlen(resource0));
   target = (off_t)reg;
 
   switch (access_type)
@@ -143,8 +142,10 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
 
   if ((fd = open(filename, O_RDWR | O_SYNC)) == -1)
     PRINT_ERROR;
-  printf("%s opened.\n", filename);
-  printf("Target offset is 0x%x, page size is %ld\n", (int)target, sysconf(_SC_PAGE_SIZE));
+  if (EepOptions.bVerbose) {
+    printf("%s opened.\n", filename);
+    printf("Target offset is 0x%x, page size is %ld\n", (int)target, sysconf(_SC_PAGE_SIZE));
+  }
   fflush(stdout);
 
   target_base = target & ~(sysconf(_SC_PAGE_SIZE) - 1);
@@ -152,12 +153,14 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
     map_size = target + items_count * type_width - target_base;
 
   /* Map one page */
-  printf("mmap(%d, %d, 0x%x, 0x%x, %d, 0x%x)\n", 0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (int)target);
+  if (EepOptions.bVerbose)
+    printf("mmap(%d, %d, 0x%x, 0x%x, %d, 0x%x)\n", 0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (int)target);
 
   map_base = mmap(0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target_base);
   if (map_base == (void *)-1)
     PRINT_ERROR;
-  printf("PCI Memory mapped to address 0x%08lx.\n", (unsigned long)map_base);
+  if (EepOptions.bVerbose)
+    printf("PCI Memory mapped to address 0x%08lx.\n", (unsigned long)map_base);
   fflush(stdout);
 
   for (i = 0; i < items_count; i++)
@@ -186,7 +189,8 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
     {
       if (read_result != prev_read_result || i == 0)
       {
-        printf("0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
+        if (EepOptions.bVerbose)
+          printf("Reg 0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
         read_result_dupped = 0;
       }
       else
@@ -223,8 +227,9 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
       read_result = *((uint64_t *)virt_addr);
       break;
     }
-    printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
-           writeval, type_width, read_result);
+    if (EepOptions.bVerbose)
+      printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
+            writeval, type_width, read_result);
     fflush(stdout);
   }
 
@@ -1249,10 +1254,10 @@ static uint8_t EepromFileLoad(struct device *d)
     // Load serial number
     for (uint8_t i = 0; i < sizeof(g_pBuffer); i++) {
       if (g_pBuffer[i] == 0x42) {
-        g_pBuffer[i+1] = EepOptions.SerialNumber[0];
-        g_pBuffer[i+2] = EepOptions.SerialNumber[1];
-        g_pBuffer[i+3] = EepOptions.SerialNumber[2];
-        g_pBuffer[i+4] = EepOptions.SerialNumber[3];
+        g_pBuffer[i+2] = EepOptions.SerialNumber[0];
+        g_pBuffer[i+3] = EepOptions.SerialNumber[1];
+        g_pBuffer[i+4] = EepOptions.SerialNumber[2];
+        g_pBuffer[i+5] = EepOptions.SerialNumber[3];
         break;
       }
     }
@@ -1394,10 +1399,10 @@ static uint8_t EepromFileSave(struct device *d)
       // Save serial number
       for (uint8_t i = 0; i < sizeof(g_pBuffer); i++) {
         if (g_pBuffer[i] == 0x42) {
-          EepOptions.SerialNumber[0] = g_pBuffer[i+1];
-          EepOptions.SerialNumber[1] = g_pBuffer[i+2];
-          EepOptions.SerialNumber[2] = g_pBuffer[i+3];
-          EepOptions.SerialNumber[3] = g_pBuffer[i+4];
+          EepOptions.SerialNumber[0] = g_pBuffer[i+2];
+          EepOptions.SerialNumber[1] = g_pBuffer[i+3];
+          EepOptions.SerialNumber[2] = g_pBuffer[i+4];
+          EepOptions.SerialNumber[3] = g_pBuffer[i+5];
           break;
         }
       }
