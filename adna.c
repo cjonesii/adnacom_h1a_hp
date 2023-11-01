@@ -1409,7 +1409,7 @@ static uint8_t EepromFileSave(struct device *d)
         free(g_pBuffer);
     }
 
-    printf("Ok (%s)\n", EepOptions.FileName);
+    printf("Ok (%s)\n", (EepOptions.bLoadFile == true) ? "" : EepOptions.FileName);
 
     return EXIT_SUCCESS;
 }
