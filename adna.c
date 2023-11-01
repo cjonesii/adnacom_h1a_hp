@@ -111,7 +111,6 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
   off_t target, target_base;
   int access_type = 'w';
   int items_count = 1;
-  int verbose = 0;
   int read_result_dupped = 0;
   int type_width;
   int i;
@@ -183,23 +182,19 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
       break;
     }
 
-    if (verbose)
-      printf("Value at offset 0x%X (%p): 0x%0*lX\n", (int)target + i * type_width, virt_addr, type_width * 2, read_result);
+    if (read_result != prev_read_result || i == 0)
+    {
+      if (EepOptions.bVerbose)
+        printf("Reg 0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
+      read_result_dupped = 0;
+    }
     else
     {
-      if (read_result != prev_read_result || i == 0)
-      {
-        if (EepOptions.bVerbose)
-          printf("Reg 0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
-        read_result_dupped = 0;
-      }
-      else
-      {
-        if (!read_result_dupped)
-          printf("...\n");
-        read_result_dupped = 1;
-      }
+      if (!read_result_dupped)
+        printf("...\n");
+      read_result_dupped = 1;
     }
+
     prev_read_result = read_result;
   }
 
@@ -304,11 +299,11 @@ void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer)
 
     check_for_ready_or_done(d);
     // Section 6.8.1 step#2
-    pci_write_long(d->dev, EEP_BUFFER_ADDR, write_buffer);
+    pcimem(d->dev, EEP_BUFFER_ADDR, write_buffer);
     check_for_ready_or_done(d);
     // Section 6.8.1 step#3
     ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
-    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
+    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
     // Section 6.8.1 step#4
     ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
     ctrl_reg.cmd_n_status_struct.blk_addr = offset;
@@ -326,11 +321,11 @@ void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer)
 
     check_for_ready_or_done(d);
     // Section 6.8.1 step#2
-    pci_write_long(d->dev, EEP_BUFFER_ADDR, buffer_32);
+    pcimem(d->dev, EEP_BUFFER_ADDR, buffer_32);
     check_for_ready_or_done(d);
     // Section 6.8.1 step#3
     ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
-    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
+    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
     // Section 6.8.1 step#4
     ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
     ctrl_reg.cmd_n_status_struct.blk_addr = offset;
@@ -346,18 +341,19 @@ void eep_init(struct device *d)
     union eep_status_and_control_reg ctrl_reg = {0};
 
     // Section 6.8.3 step#2
-    pci_write_long(d->dev, EEP_BUFFER_ADDR, EEP_INIT_VAL);
+    pcimem(d->dev, EEP_BUFFER_ADDR, EEP_INIT_VAL);
     // Section 6.8.3 step#3
     ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
     ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
     ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
-    pci_write_long(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
+    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
     // Section 6.8.3 step#4
     ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
     ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
     ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
     eep_data(d, ctrl_reg.cmd_u32, NULL);
 
+    printf("EEPROM was initialized. Please restart your system for changes to take effect.\n");
     fflush(stdout);
 }
 
@@ -639,29 +635,29 @@ show_terse(struct device *d)
 
   show_slot_name(d);
   printf(" %s: %s",
-	 pci_lookup_name(pacc, classbuf, sizeof(classbuf),
-			 PCI_LOOKUP_CLASS,
-			 p->device_class),
-	 pci_lookup_name(pacc, devbuf, sizeof(devbuf),
-			 PCI_LOOKUP_VENDOR | PCI_LOOKUP_DEVICE,
-			 p->vendor_id, p->device_id));
+         pci_lookup_name(pacc, classbuf, sizeof(classbuf),
+                         PCI_LOOKUP_CLASS,
+                         p->device_class),
+         pci_lookup_name(pacc, devbuf, sizeof(devbuf),
+                         PCI_LOOKUP_VENDOR | PCI_LOOKUP_DEVICE,
+                         p->vendor_id, p->device_id));
   if (c = get_conf_byte(d, PCI_REVISION_ID))
     printf(" (rev %02x)", c);
   if (verbose)
+  {
+    char *x;
+    c = get_conf_byte(d, PCI_CLASS_PROG);
+    x = pci_lookup_name(pacc, devbuf, sizeof(devbuf),
+                        PCI_LOOKUP_PROGIF | PCI_LOOKUP_NO_NUMBERS,
+                        p->device_class, c);
+    if (c || x)
     {
-      char *x;
-      c = get_conf_byte(d, PCI_CLASS_PROG);
-      x = pci_lookup_name(pacc, devbuf, sizeof(devbuf),
-			  PCI_LOOKUP_PROGIF | PCI_LOOKUP_NO_NUMBERS,
-			  p->device_class, c);
-      if (c || x)
-	{
-	  printf(" (prog-if %02x", c);
-	  if (x)
-	    printf(" [%s]", x);
-	  putchar(')');
-	}
+      printf(" (prog-if %02x", c);
+      if (x)
+        printf(" [%s]", x);
+      putchar(')');
     }
+  }
   putchar('\n');
 
   if (verbose || opt_kernel)
@@ -1254,6 +1250,7 @@ static uint8_t EepromFileLoad(struct device *d)
         break;
       }
     }
+    printf("Ok\n");
 
     // Default to successful operation
     rc = EXIT_SUCCESS;
@@ -1409,7 +1406,7 @@ static uint8_t EepromFileSave(struct device *d)
         free(g_pBuffer);
     }
 
-    printf("Ok (%s)\n", (EepOptions.bLoadFile == true) ? "" : EepOptions.FileName);
+    printf("Ok %s\n", (EepOptions.bLoadFile == true) ? "" : EepOptions.FileName);
 
     return EXIT_SUCCESS;
 }
@@ -1433,32 +1430,40 @@ static int eep_process(int j)
 {
     struct device *d;
     int eep_present = EEP_PRSNT_MAX;
+    uint32_t read;
     int status = EXIT_SUCCESS;
 
     for (d=first_dev; d; d=d->next) {
         if (d->NumDevice == j) {
-            eep_present = (pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0) >> EEP_PRSNT_OFFSET) & 3;;
+          read = pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0);
+          if (read == PCI_MEM_ERROR) {
+            printf("Erased EEPROM is currently not supported\n");
+            exit(-1);
+          }
+  
+          eep_present = (read >> EEP_PRSNT_OFFSET) & 3;;
 
-            switch (eep_present) {
-            case NOT_PRSNT:
-                printf("No EEPROM Present\n");
-                status = EXIT_FAILURE;
-            break;
-            case PRSNT_VALID:
-                printf("EEPROM present with valid data\n");
-            break;
-            case PRSNT_INVALID:
-                printf("Present but invalid data/CRC error/blank\n");
-                eep_init(d);
-                printf("EEPROM initialization done, please restart your computer.\n");
-            break;
-            }
+          switch (eep_present) {
+          case NOT_PRSNT:
+              printf("No EEPROM Present\n");
+              status = EXIT_FAILURE;
+          break;
+          case PRSNT_VALID:
+              printf("EEPROM present with valid data\n");
+          break;
+          case PRSNT_INVALID:
+              printf("Present but invalid data/CRC error/blank\n");
+              eep_init(d);
+              printf("EEPROM initialization done, please restart your computer.\n");
+              status = EXIT_FAILURE;
+          break;
+          }
 
-            if (EXIT_SUCCESS == status) {
-                status = EepFile(d);
-            } else {
-                return status;
-            }
+          if (EXIT_SUCCESS == status) {
+              status = EepFile(d);
+          } else {
+              return status;
+          }
         }
     }
     return status;
@@ -1587,7 +1592,6 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 /* Main */
 int main(int argc, char **argv)
 {
-  int j;
   int NumDevices = 1;
   int status = EXIT_SUCCESS;
 
@@ -1604,7 +1608,7 @@ int main(int argc, char **argv)
   pacc->error = die;
   pci_filter_init(pacc, &filter);
 
-  verbose = 2; // very verbose by default (pci process)
+  verbose = 2; // flag used by pci process
   pci_init(pacc);
   scan_devices();
   sort_them(&NumDevices);
@@ -1621,18 +1625,26 @@ int main(int argc, char **argv)
   }
 
   printf("[0] Cancel\n\n");
-  do {
-      printf("    Device selection --> ");
-      if (scanf("%d", &j) <= 0)
-      {
-          // Added for compiler warning
+  char line[10];
+  int num;
+  printf("    Device selection --> ");
+  while (fgets(line, sizeof(line), stdin) != NULL) {
+    if (sscanf(line, "%d", &num) == 1) {
+      if ((num == 0) ||
+          (num >= NumDevices)) {
+            goto __exit;
+      } else {
+        break;
       }
-  } while (j > NumDevices);
-  if (j == 0)
+    } else {
+      printf("    Invalid input\n");
       goto __exit;
-  status = eep_process(j);
+    }
+  }
+
+  status = eep_process(num);
   if (status == EXIT_FAILURE)
-      goto __exit;
+    goto __exit;
 
 __exit:
   show_kernel_cleanup();

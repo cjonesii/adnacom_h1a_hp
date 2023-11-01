@@ -27,6 +27,7 @@
 #define EEP_WR_PROTECT_EN_OFFSET        (31)
 
 #define EEP_INIT_VAL            (0x0000005A)
+#define PCI_MEM_ERROR           (0xFFFFFFFF)
 
 #define CMD_LINE_ERR      2
 #define EEP_FAIL          3
