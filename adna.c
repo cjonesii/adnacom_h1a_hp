@@ -982,7 +982,7 @@ show_verbose(struct device *d)
   if ((FLAG(cmd, PCI_COMMAND_IO) == '-') ||
       (FLAG(cmd, PCI_COMMAND_MEMORY) == '-') ||
       (FLAG(cmd, PCI_COMMAND_MASTER) == '-') ) {
-    set_conf_byte(d, PCI_COMMAND, 0x3);
+    set_conf_byte(d, PCI_COMMAND, 0x7);
   }
 
   pci_fill_info(p, PCI_FILL_IRQ | PCI_FILL_BASES | PCI_FILL_ROM_BASE | PCI_FILL_SIZES |
