@@ -378,9 +378,7 @@ bool pcidev_is_adnacom(struct pci_dev *p)
 {
         struct adnatool_pci_device *entry;
         pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_BASES | PCI_FILL_CLASS);
-        // printf("vendor: 0x%02x device: 0x%02x\n", p->vendor_id, p->device_id);
         for (entry = adnatool_pci_devtbl; entry->vid != 0; entry++) {
-                // printf("entry: 0x%02x device: 0x%02x\n", entry->vid, entry->did);
                 if (p->vendor_id != entry->vid)
                         continue;
                 if (p->device_id != entry->did)
@@ -436,7 +434,7 @@ scan_device(struct pci_dev *p)
   d = xmalloc(sizeof(struct device));
   memset(d, 0, sizeof(*d));
   d->dev = p;
-  d->config_cached = d->config_bufsize = 512; // Increase to 512 from 64 to include EEPROM register
+  d->config_cached = d->config_bufsize = 512;
   d->config = xmalloc(512);
   d->present = xmalloc(512);
   memset(d->present, 1, 512);
@@ -1026,8 +1024,7 @@ show_verbose(struct device *d)
 
 /*** Machine-readable dumps ***/
 
-static void
-show_hex_dump(struct device *d)
+static void show_hex_dump(struct device *d)
 {
   unsigned int i, cnt;
 
@@ -1049,8 +1046,7 @@ show_hex_dump(struct device *d)
     }
 }
 
-static void
-print_shell_escaped(char *c)
+static void print_shell_escaped(char *c)
 {
   printf(" \"");
   while (*c)
@@ -1062,8 +1058,7 @@ print_shell_escaped(char *c)
   putchar('"');
 }
 
-static void
-show_machine(struct device *d)
+static void show_machine(struct device *d)
 {
   struct pci_dev *p = d->dev;
   int c;
@@ -1129,9 +1124,7 @@ show_machine(struct device *d)
 }
 
 /*** Main show function ***/
-
-void
-show_device(struct device *d)
+void show_device(struct device *d)
 {
   if (opt_machine)
     show_machine(d); // not used by Adna
@@ -1152,8 +1145,7 @@ show_device(struct device *d)
     putchar('\n');
 }
 
-static void
-show(void)
+static void show(void)
 {
   struct device *d;
 
@@ -1593,9 +1585,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 }
 
 /* Main */
-
-int
-main(int argc, char **argv)
+int main(int argc, char **argv)
 {
   int j;
   int NumDevices = 1;
