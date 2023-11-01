@@ -481,6 +481,13 @@ get_conf_byte(struct device *d, unsigned int pos)
   return d->config[pos];
 }
 
+void
+set_conf_byte(struct device *d, unsigned int pos, uint8_t data)
+{
+  check_conf_range(d, pos, 1);
+  d->config[pos] = data;
+}
+
 word
 get_conf_word(struct device *d, unsigned int pos)
 {
@@ -958,7 +965,6 @@ show_verbose(struct device *d)
 
 #ifndef ADNA
   char *iommu_group;
-  word cmd = get_conf_word(d, PCI_COMMAND);
   byte int_pin = get_conf_byte(d, PCI_INTERRUPT_PIN);
   byte latency = get_conf_byte(d, PCI_LATENCY_TIMER);
   byte cache_line = get_conf_byte(d, PCI_CACHE_LINE_SIZE);
@@ -970,6 +976,14 @@ show_verbose(struct device *d)
 #endif
 
   show_terse(d);
+
+  word cmd = get_conf_word(d, PCI_COMMAND);
+
+  if ((FLAG(cmd, PCI_COMMAND_IO) == '-') ||
+      (FLAG(cmd, PCI_COMMAND_MEMORY) == '-') ||
+      (FLAG(cmd, PCI_COMMAND_MASTER) == '-') ) {
+    set_conf_byte(d, PCI_COMMAND, 0x3);
+  }
 
   pci_fill_info(p, PCI_FILL_IRQ | PCI_FILL_BASES | PCI_FILL_ROM_BASE | PCI_FILL_SIZES |
     PCI_FILL_PHYS_SLOT | PCI_FILL_NUMA_NODE | PCI_FILL_DT_NODE | PCI_FILL_IOMMU_GROUP);
@@ -1437,7 +1451,7 @@ static int eep_process(int j)
         if (d->NumDevice == j) {
           read = pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0);
           if (read == PCI_MEM_ERROR) {
-            printf("Erased EEPROM is currently not supported\n");
+            printf("Unexpected error. Exiting.\n");
             exit(-1);
           }
   
@@ -1532,8 +1546,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 
             // Flag parameter retrieved
             bGetSerialNumber = false;
-        }
-        else if ((strcasecmp(argv[i], "-?") == 0) ||
+        } else if ((strcasecmp(argv[i], "-?") == 0) ||
                    (strcasecmp(argv[i], "-h") == 0)) {
             
             DisplayHelp();
@@ -1551,8 +1564,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 
             // Set flag to get file name
             bGetFileName = true;
-        } 
-        else if (strcasecmp(argv[i], "-e") == 0) {
+        } else if (strcasecmp(argv[i], "-e") == 0) {
             EepOptions.bListOnly = true;
         } else if (strcasecmp(argv[i], "-n") == 0) {
             EepOptions.bSerialNumber = true;

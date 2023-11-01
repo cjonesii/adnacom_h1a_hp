@@ -45,6 +45,7 @@ u32 get_conf_long(struct device *d, unsigned int pos);
 void set_conf_long(struct device *d, unsigned int pos, uint32_t data);
 word get_conf_word(struct device *d, unsigned int pos);
 byte get_conf_byte(struct device *d, unsigned int pos);
+void set_conf_byte(struct device *d, unsigned int pos, uint8_t data);
 void get_subid(struct device *d, word *subvp, word *subdp);
 
 /* Useful macros for decoding of bits and bit fields */
