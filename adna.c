@@ -1252,12 +1252,13 @@ static uint8_t EepromFileLoad(struct device *d)
     printf("Ok (%dB)\n", (int)FileSize);
 
     // Load serial number
+    printf("Load Serial Number\n");
     for (uint8_t i = 0; i < FileSize; i++) {
       if (g_pBuffer[i] == 0x42) {
-        g_pBuffer[i+2] = EepOptions.SerialNumber[0];
-        g_pBuffer[i+3] = EepOptions.SerialNumber[1];
-        g_pBuffer[i+4] = EepOptions.SerialNumber[2];
-        g_pBuffer[i+5] = EepOptions.SerialNumber[3];
+        g_pBuffer[i+5] = EepOptions.SerialNumber[0];
+        g_pBuffer[i+4] = EepOptions.SerialNumber[1];
+        g_pBuffer[i+3] = EepOptions.SerialNumber[2];
+        g_pBuffer[i+2] = EepOptions.SerialNumber[3];
         break;
       }
     }
@@ -1375,7 +1376,8 @@ static uint8_t EepromFileSave(struct device *d)
     }
     printf("Ok\n");
 
-    if (EepOptions.bSerialNumber == false) {
+    if ((EepOptions.bSerialNumber == false) && 
+        (EepOptions.bLoadFile == false)) {
       printf("Write data to file.... \n");
       fflush(stdout);
 
@@ -1395,18 +1397,20 @@ static uint8_t EepromFileSave(struct device *d)
 
       // Close the file
       fclose(pFile);
-    } else { // EepOptions.bSerialNumber == true
+    } else if ((EepOptions.bSerialNumber == false) && 
+               (EepOptions.bLoadFile == true)) {
       // Save serial number
-      for (uint8_t i = 0; i < EepSize); i++) {
+      printf("Save Serial Number to buffer\n");
+      for (uint8_t i = 0; i < EepSize; i++) {
         if (g_pBuffer[i] == 0x42) {
-          EepOptions.SerialNumber[0] = g_pBuffer[i+2];
-          EepOptions.SerialNumber[1] = g_pBuffer[i+3];
-          EepOptions.SerialNumber[2] = g_pBuffer[i+4];
-          EepOptions.SerialNumber[3] = g_pBuffer[i+5];
+          EepOptions.SerialNumber[0] = g_pBuffer[i+5];
+          EepOptions.SerialNumber[1] = g_pBuffer[i+4];
+          EepOptions.SerialNumber[2] = g_pBuffer[i+3];
+          EepOptions.SerialNumber[3] = g_pBuffer[i+2];
           break;
         }
       }
-    }
+    } else {}
 
     // Release the buffer
     if (g_pBuffer != NULL) {
@@ -1423,6 +1427,10 @@ static uint8_t EepFile(struct device *d)
   if (EepOptions.bVerbose)
     printf("Function: %s\n", __func__);
   if (EepOptions.bLoadFile) {
+      if (EepOptions.bSerialNumber == false) {
+        printf("Get Serial Number from device\n");
+        EepromFileSave(d);
+      }
       return EepromFileLoad(d);
   } else {
       return EepromFileSave(d);
