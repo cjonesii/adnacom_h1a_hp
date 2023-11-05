@@ -37,15 +37,14 @@ extern struct pci_filter filter;
 extern char *opt_pcimap;
 extern struct device *first_dev;
 extern struct pci_access *pacc;
+extern int g_is_d0_flag;
 
 struct device *scan_device(struct pci_dev *p);
 void show_device(struct device *d);
 int config_fetch(struct device *d, unsigned int pos, unsigned int len);
 u32 get_conf_long(struct device *d, unsigned int pos);
-void set_conf_long(struct device *d, unsigned int pos, uint32_t data);
 word get_conf_word(struct device *d, unsigned int pos);
 byte get_conf_byte(struct device *d, unsigned int pos);
-void set_conf_byte(struct device *d, unsigned int pos, uint8_t data);
 void get_subid(struct device *d, word *subvp, word *subdp);
 
 /* Useful macros for decoding of bits and bit fields */
@@ -55,6 +54,12 @@ void get_subid(struct device *d, word *subvp, word *subdp);
 #define TABLE(tab,x,buf) ((x) < sizeof(tab)/sizeof((tab)[0]) ? (tab)[x] : (sprintf((buf), "??%d", (x)), (buf)))
 
 #define ADNA // Selective adna print out
+
+// PCI device Power Management states (PM Cntrl/Stat [1:0])
+#define PCI_CAP_PM_STATE_D0                     0x00
+#define PCI_CAP_PM_STATE_D1                     0x01
+#define PCI_CAP_PM_STATE_D2                     0x02
+#define PCI_CAP_PM_STATE_D3_HOT                 0x03
 
 struct device {
   struct device *next;
@@ -120,5 +125,3 @@ void show_forest(struct pci_filter *filter);
 /* ls-map.c */
 
 void map_the_bus(void);
-
-uint32_t pci_eep_read_status_reg(struct device *d, uint32_t offset);

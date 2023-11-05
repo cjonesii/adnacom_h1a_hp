@@ -10,13 +10,13 @@
 #include <string.h>
 
 #include "adna.h"
-#ifndef ADNA
+
 static void
 cap_pm(struct device *d, int where, int cap)
 {
-  int t, b;
+  int t, b, u;
+#ifndef ADNA
   static int pm_aux_current[8] = { 0, 55, 100, 160, 220, 270, 320, 375 };
-
   printf("Power Management version %d\n", cap & PCI_PM_CAP_VER_MASK);
   if (verbose < 2)
     return;
@@ -33,7 +33,11 @@ cap_pm(struct device *d, int where, int cap)
 	 FLAG(cap, PCI_PM_CAP_PME_D3_COLD));
   if (!config_fetch(d, where + PCI_PM_CTRL, PCI_PM_SIZEOF - PCI_PM_CTRL))
     return;
+#endif // ADNA
+  (void)(b);
+  (void)(cap);
   t = get_conf_word(d, where + PCI_PM_CTRL);
+#ifndef ADNA
   printf("\t\tStatus: D%d NoSoftRst%c PME-Enable%c DSel=%d DScale=%d PME%c\n",
 	 t & PCI_PM_CTRL_STATE_MASK,
 	 FLAG(t, PCI_PM_CTRL_NO_SOFT_RST),
@@ -46,8 +50,23 @@ cap_pm(struct device *d, int where, int cap)
     printf("\t\tBridge: PM%c B3%c\n",
 	   FLAG(t, PCI_PM_BPCC_ENABLE),
 	   FLAG(~t, PCI_PM_PPB_B2_B3));
+#else
+  printf("\tPower State: D%d\n", t & PCI_PM_CTRL_STATE_MASK); 
+  // Ensure PM state is D0 (PM 04h[1:0]=0)
+  if ((t & 0x3) != PCI_CAP_PM_STATE_D0) {
+    g_is_d0_flag = 0;
+    printf("\t  Transitioning Power State to D0(Active)... ");
+    t &= ~(word)0x3;
+    t |= (PCI_CAP_PM_STATE_D0 << 0);
+    pci_write_word(d->dev, where + PCI_PM_CTRL, (word)t);
+    int i = 0;
+    while(10000 > i++);
+    u = pci_read_word(d->dev, where + PCI_PM_CTRL);
+    printf("%s\n", ((u & 0x3) != PCI_CAP_PM_STATE_D0) ? " not Ok" : " Ok");
+  }
+#endif
 }
-
+#ifndef ADNA
 static void
 format_agp_rate(int rate, char *buf, int agp3)
 {
@@ -1384,7 +1403,7 @@ cap_express(struct device *d, int where, int cap)
     case PCI_EXP_TYPE_DOWNSTREAM:
       slot = cap & PCI_EXP_FLAGS_SLOT;
       // printf("Downstream Port (Slot%c)", FLAG(cap, PCI_EXP_FLAGS_SLOT));
-      printf("Downstream Port");
+      printf("Downstream Port (No EEPROM access)");
       break;
     case PCI_EXP_TYPE_PCI_BRIDGE:
       printf("PCI-Express to PCI/PCI-X Bridge");
@@ -1695,27 +1714,26 @@ static void cap_ea(struct device *d, int where, int cap)
   }
 }
 #endif // ADNA
-void
-show_caps(struct device *d, int where)
+void show_caps(struct device *d, int where)
 {
   int can_have_ext_caps = 0;
   int type = -1;
 
   if (get_conf_word(d, PCI_STATUS) & PCI_STATUS_CAP_LIST)
+  {
+    byte been_there[256];
+    where = get_conf_byte(d, where) & ~3;
+    memset(been_there, 0, 256);
+    while (where)
     {
-      byte been_there[256];
-      where = get_conf_byte(d, where) & ~3;
-      memset(been_there, 0, 256);
-      while (where)
-	{
-	  int id, next, cap;
+      int id, next, cap;
 
-	  if (!config_fetch(d, where, 4))
-	    {
-	      puts("<access denied>");
-	      break;
-	    }
-	  id = get_conf_byte(d, where + PCI_CAP_LIST_ID);
+      if (!config_fetch(d, where, 4))
+      {
+        puts("<access denied>");
+        break;
+      }
+      id = get_conf_byte(d, where + PCI_CAP_LIST_ID);
       // if (PCI_CAP_ID_EXP == id) {
       //   printf("\tCapabilities: ");
       // }
@@ -1724,95 +1742,98 @@ show_caps(struct device *d, int where)
       // if (PCI_CAP_ID_EXP == id)
       //   printf("[%02x] ", where);
 
-      if (been_there[where]++) {
-          printf("<chain looped>\n");
-          break;
+      if (been_there[where]++)
+      {
+        printf("<chain looped>\n");
+        break;
       }
-      if (id == 0xff) {
-          printf("<chain broken>\n");
-          break;
+      if (id == 0xff)
+      {
+        printf("<chain broken>\n");
+        break;
       }
 
-	  switch (id)
-	    {
+      switch (id)
+      {
+
+      case PCI_CAP_ID_NULL:
+        printf("Null\n");
+        break;
+      case PCI_CAP_ID_PM:
+        cap_pm(d, where, cap);
+        break;
 #ifndef ADNA
-	    case PCI_CAP_ID_NULL:
-	      printf("Null\n");
-	      break;
-	    case PCI_CAP_ID_PM:
-	      cap_pm(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_AGP:
-	      cap_agp(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_VPD:
-	      cap_vpd(d);
-	      break;
-	    case PCI_CAP_ID_SLOTID:
-	      cap_slotid(cap);
-	      break;
-	    case PCI_CAP_ID_MSI:
-	      cap_msi(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_CHSWP:
-	      printf("CompactPCI hot-swap <?>\n");
-	      break;
-	    case PCI_CAP_ID_PCIX:
-	      cap_pcix(d, where);
-	      can_have_ext_caps = 1;
-	      break;
-	    case PCI_CAP_ID_HT:
-	      cap_ht(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_VNDR:
-	      show_vendor_caps(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_DBG:
-	      cap_debug_port(cap);
-	      break;
-	    case PCI_CAP_ID_CCRC:
-	      printf("CompactPCI central resource control <?>\n");
-	      break;
-	    case PCI_CAP_ID_HOTPLUG:
-	      printf("Hot-plug capable\n");
-	      break;
-	    case PCI_CAP_ID_SSVID:
-	      cap_ssvid(d, where);
-	      break;
-	    case PCI_CAP_ID_AGP3:
-	      printf("AGP3 <?>\n");
-	      break;
-	    case PCI_CAP_ID_SECURE:
-	      printf("Secure device <?>\n");
-	      break;
+      case PCI_CAP_ID_AGP:
+        cap_agp(d, where, cap);
+        break;
+      case PCI_CAP_ID_VPD:
+        cap_vpd(d);
+        break;
+      case PCI_CAP_ID_SLOTID:
+        cap_slotid(cap);
+        break;
+      case PCI_CAP_ID_MSI:
+        cap_msi(d, where, cap);
+        break;
+      case PCI_CAP_ID_CHSWP:
+        printf("CompactPCI hot-swap <?>\n");
+        break;
+      case PCI_CAP_ID_PCIX:
+        cap_pcix(d, where);
+        can_have_ext_caps = 1;
+        break;
+      case PCI_CAP_ID_HT:
+        cap_ht(d, where, cap);
+        break;
+      case PCI_CAP_ID_VNDR:
+        show_vendor_caps(d, where, cap);
+        break;
+      case PCI_CAP_ID_DBG:
+        cap_debug_port(cap);
+        break;
+      case PCI_CAP_ID_CCRC:
+        printf("CompactPCI central resource control <?>\n");
+        break;
+      case PCI_CAP_ID_HOTPLUG:
+        printf("Hot-plug capable\n");
+        break;
+      case PCI_CAP_ID_SSVID:
+        cap_ssvid(d, where);
+        break;
+      case PCI_CAP_ID_AGP3:
+        printf("AGP3 <?>\n");
+        break;
+      case PCI_CAP_ID_SECURE:
+        printf("Secure device <?>\n");
+        break;
 #endif // ADNA
-	    case PCI_CAP_ID_EXP:
-	      type = cap_express(d, where, cap);
-	      can_have_ext_caps = 1;
-	      break; 
+      case PCI_CAP_ID_EXP:
+        type = cap_express(d, where, cap);
+        can_have_ext_caps = 1;
+        break;
 #ifndef ADNA
-	    case PCI_CAP_ID_MSIX:
-	      cap_msix(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_SATA:
-	      cap_sata_hba(d, where, cap);
-	      break;
-	    case PCI_CAP_ID_AF:
-	      cap_af(d, where);
-	      break;
-	    case PCI_CAP_ID_EA:
-	      cap_ea(d, where, cap);
-	      break;
+      case PCI_CAP_ID_MSIX:
+        cap_msix(d, where, cap);
+        break;
+      case PCI_CAP_ID_SATA:
+        cap_sata_hba(d, where, cap);
+        break;
+      case PCI_CAP_ID_AF:
+        cap_af(d, where);
+        break;
+      case PCI_CAP_ID_EA:
+        cap_ea(d, where, cap);
+        break;
 #endif // ADNA
-	    default:
-          break;
+      default:
+        break;
 #ifndef ADNA
-	      printf("Capability ID %#02x [%04x]\n", id, cap);
+        printf("Capability ID %#02x [%04x]\n", id, cap);
 #endif // ADNA
-	    }
-	  where = next;
-	}
+      }
+      where = next;
     }
+  }
   if (can_have_ext_caps)
     show_ext_caps(d, type);
 }

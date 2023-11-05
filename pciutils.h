@@ -5,6 +5,9 @@
  *
  *	Can be freely distributed and used under the terms of the GNU GPL.
  */
+#ifndef __PCIUTILS_H__
+#define __PCIUTILS_H__
+
 
 #include "lib/pci.h"
 #include "lib/sysdep.h"
@@ -46,3 +49,5 @@ int parse_generic_option(int i, struct pci_access *pacc, char *arg);
 	"-O <par>=<val>\tSet PCI access parameter (see `-O help' for a list)\n" \
 	"-G\t\tEnable PCI access debugging\n" \
 	GENHELP_INTEL GENHELP_DUMP
+
+#endif /*__PCIUTILS_H__*/

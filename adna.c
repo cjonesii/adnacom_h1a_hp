@@ -26,14 +26,15 @@
 
 /* Options */
 
-int verbose;				/* Show detailed information */
-static int opt_hex;			/* Show contents of config space as hexadecimal numbers */
-struct pci_filter filter;		/* Device filter */
-static int opt_path;			/* Show bridge path */
-static int opt_machine;			/* Generate machine-readable output */
-static int opt_domains;			/* Show domain numbers (0=disabled, 1=auto-detected, 2=requested) */
-static int opt_kernel;			/* Show kernel drivers */
-char *opt_pcimap;			/* Override path to Linux modules.pcimap */
+int verbose;              /* Show detailed information */
+static int opt_hex;       /* Show contents of config space as hexadecimal numbers */
+struct pci_filter filter; /* Device filter */
+static int opt_path;      /* Show bridge path */
+static int opt_machine;   /* Generate machine-readable output */
+static int opt_domains;   /* Show domain numbers (0=disabled, 1=auto-detected, 2=requested) */
+static int opt_kernel;    /* Show kernel drivers */
+char *opt_pcimap;         /* Override path to Linux modules.pcimap */
+int g_is_d0_flag;         /* BAR0 not writable flag. Exit early and prompt for rerun */
 
 const char program_name[] = "adna";
 char g_h1a_us_port_bar0[256] = "\0";
@@ -43,7 +44,7 @@ struct eep_options EepOptions;
 /*** Our view of the PCI bus ***/
 
 struct pci_access *pacc;
-struct device *first_dev;
+struct device *first_dev = NULL;
 static int seen_errors;
 static int need_topology;
 
@@ -84,11 +85,29 @@ void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer);
 void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer);
 void eep_init(struct device *d);
 
-#define PRINT_ERROR \
-	do { \
-		fprintf(stderr, "Error at line %d, file %s (%d) [%s]\n", \
-		__LINE__, __FILE__, errno, strerror(errno)); exit(1); \
-	} while(0)
+static int adnatool_refresh_device_cache(void)
+{
+  struct device *d;
+  for (d=first_dev; d; d=d->next) {
+    /* let's refresh the pcidev details */
+    if (!d->dev->cache) {
+            u8 *cache;
+            if ((cache = calloc(1, 512)) == NULL) {
+                    fprintf(stderr, "error allocating pci device config cache!\n");
+                    exit(-1);
+            }
+            pci_setup_cache(d->dev, cache, 512);
+    }
+
+    /* refresh the config block */
+    if (!pci_read_block(d->dev, 0, d->dev->cache, 512)) {
+            fprintf(stderr, "error reading pci device config!\n");
+            return -1;
+    }
+  }
+
+  return 0;
+}
 
 static void pci_get_res0(struct pci_dev *pdev, char *path, size_t pathlen)
 {
@@ -367,7 +386,7 @@ int pci_get_devtype(struct pci_dev *pdev)
 
 bool pci_is_upstream(struct pci_dev *pdev)
 {
-        return pci_get_devtype(pdev) == PCI_EXP_TYPE_UPSTREAM;
+  return pci_get_devtype(pdev) == PCI_EXP_TYPE_UPSTREAM;
 }
 
 bool pcidev_is_adnacom(struct pci_dev *p)
@@ -386,8 +405,7 @@ bool pcidev_is_adnacom(struct pci_dev *p)
         return false;
 }
 
-int
-config_fetch(struct device *d, unsigned int pos, unsigned int len)
+int config_fetch(struct device *d, unsigned int pos, unsigned int len)
 {
   unsigned int end = pos+len;
   int result;
@@ -414,8 +432,7 @@ config_fetch(struct device *d, unsigned int pos, unsigned int len)
   return result;
 }
 
-struct device *
-scan_device(struct pci_dev *p)
+struct device *scan_device(struct pci_dev *p)
 {
   struct device *d;
 
@@ -447,25 +464,21 @@ scan_device(struct pci_dev *p)
   return d;
 }
 
-static void
-scan_devices(void)
+static void scan_devices(void)
 {
   struct device *d;
   struct pci_dev *p;
 
   pci_scan_bus(pacc);
   for (p=pacc->devices; p; p=p->next)
-    if (d = scan_device(p))
-      {
-        d->next = first_dev;
-        first_dev = d;
-      }
+    if (d = scan_device(p)) {
+      d->next = first_dev;
+      first_dev = d;
+    }
 }
 
 /*** Config space accesses ***/
-
-static void
-check_conf_range(struct device *d, unsigned int pos, unsigned int len)
+static void check_conf_range(struct device *d, unsigned int pos, unsigned int len)
 {
   while (len)
     if (!d->present[pos])
@@ -474,29 +487,19 @@ check_conf_range(struct device *d, unsigned int pos, unsigned int len)
       pos++, len--;
 }
 
-byte
-get_conf_byte(struct device *d, unsigned int pos)
+byte get_conf_byte(struct device *d, unsigned int pos)
 {
   check_conf_range(d, pos, 1);
   return d->config[pos];
 }
 
-void
-set_conf_byte(struct device *d, unsigned int pos, uint8_t data)
-{
-  check_conf_range(d, pos, 1);
-  d->config[pos] = data;
-}
-
-word
-get_conf_word(struct device *d, unsigned int pos)
+word get_conf_word(struct device *d, unsigned int pos)
 {
   check_conf_range(d, pos, 2);
   return d->config[pos] | (d->config[pos+1] << 8);
 }
 
-u32
-get_conf_long(struct device *d, unsigned int pos)
+u32 get_conf_long(struct device *d, unsigned int pos)
 {
   check_conf_range(d, pos, 4);
   return d->config[pos] |
@@ -505,20 +508,8 @@ get_conf_long(struct device *d, unsigned int pos)
     (d->config[pos+3] << 24);
 }
 
-void
-set_conf_long(struct device *d, unsigned int pos, uint32_t data)
-{
-  check_conf_range(d, pos, 4);
-  d->config[pos  ] = (data << 0)  & 0xFF;
-  d->config[pos+1] = (data << 8)  & 0xFF;
-  d->config[pos+2] = (data << 16) & 0xFF;
-  d->config[pos+3] = (data << 24) & 0xFF;
-}
-
 /*** Sorting ***/
-
-static int
-compare_them(const void *A, const void *B)
+static int compare_them(const void *A, const void *B)
 {
   const struct pci_dev *a = (*(const struct device **)A)->dev;
   const struct pci_dev *b = (*(const struct device **)B)->dev;
@@ -542,8 +533,20 @@ compare_them(const void *A, const void *B)
   return 0;
 }
 
-static void
-sort_them(int *NumDevices)
+static int count_upstream(void)
+{
+  struct device *d;
+  int i=0;
+  for (d=first_dev; d; d=d->next) {
+    if (pci_is_upstream(d->dev))
+      d->NumDevice = ++i;
+    else
+      d->NumDevice = 0;
+  }
+  return i;
+}
+
+static void sort_them(void)
 {
   struct device **index, **h, **last_dev;
   int cnt;
@@ -558,27 +561,16 @@ sort_them(int *NumDevices)
   qsort(index, cnt, sizeof(struct device *), compare_them);
   last_dev = &first_dev;
   h = index;
-  while (cnt--)
-    {
-      *last_dev = *h;
-      last_dev = &(*h)->next;
-      h++;
-    }
-  *last_dev = NULL;
-  int i=1;
-  for (d=first_dev; d; d=d->next) {
-      if (pci_is_upstream(d->dev))
-        d->NumDevice = i++;
-      else
-        d->NumDevice = 0;
+  while (cnt--) {
+    *last_dev = *h;
+    last_dev = &(*h)->next;
+    h++;
   }
-  *NumDevices = i;
+  *last_dev = NULL;
 }
 
 /*** Normal output ***/
-
-static void
-show_slot_path(struct device *d)
+static void show_slot_path(struct device *d)
 {
   struct pci_dev *p = d->dev;
 
@@ -598,14 +590,13 @@ show_slot_path(struct device *d)
 	}
     }
   if (d->NumDevice)
-    printf("[%d] ", d->NumDevice);
+    printf("[%d]\t", d->NumDevice);
   else
-    printf("     ");
+    printf("\t");
   printf("%02x:%02x.%d", p->bus, p->dev, p->func);
 }
 
-static void
-show_slot_name(struct device *d)
+static void show_slot_name(struct device *d)
 {
   struct pci_dev *p = d->dev;
 
@@ -614,8 +605,7 @@ show_slot_name(struct device *d)
   show_slot_path(d);
 }
 
-void
-get_subid(struct device *d, word *subvp, word *subdp)
+void get_subid(struct device *d, word *subvp, word *subdp)
 {
   byte htype = get_conf_byte(d, PCI_HEADER_TYPE) & 0x7f;
 
@@ -633,8 +623,7 @@ get_subid(struct device *d, word *subvp, word *subdp)
     *subvp = *subdp = 0xffff;
 }
 
-static void
-show_terse(struct device *d)
+static void show_terse(struct device *d)
 {
   int c;
   struct pci_dev *p = d->dev;
@@ -690,9 +679,7 @@ show_terse(struct device *d)
 }
 
 /*** Verbose output ***/
-
-static void
-show_size(u64 x)
+static void show_size(u64 x)
 {
   static const char suffix[][2] = { "", "K", "M", "G", "T" };
   unsigned i;
@@ -724,8 +711,7 @@ show_range(char *prefix, u64 base, u64 limit, int is_64bit)
   putchar('\n');
 }
 #endif
-static void
-show_bases(struct device *d, int cnt)
+static void show_bases(struct device *d, int cnt)
 {
   struct pci_dev *p = d->dev;
   word cmd = get_conf_word(d, PCI_COMMAND);
@@ -869,8 +855,7 @@ show_rom(struct device *d, int reg)
   putchar('\n');
 }
 #endif // ADNA
-static void
-show_htype0(struct device *d)
+static void show_htype0(struct device *d)
 {
 #ifndef ADNA
   show_bases(d, 6);
@@ -879,14 +864,12 @@ show_htype0(struct device *d)
   show_caps(d, PCI_CAPABILITY_LIST);
 }
 
-static void
-show_htype1(struct device *d)
+static void show_htype1(struct device *d)
 {
   show_caps(d, PCI_CAPABILITY_LIST);
 }
 
-static void
-show_htype2(struct device *d)
+static void show_htype2(struct device *d)
 {
   int i;
   word cmd = get_conf_word(d, PCI_COMMAND);
@@ -953,8 +936,7 @@ show_htype2(struct device *d)
   show_caps(d, PCI_CB_CAPABILITY_LIST);
 }
 
-static void
-show_verbose(struct device *d)
+static void show_verbose(struct device *d)
 {
   struct pci_dev *p = d->dev;
   word class = p->device_class;
@@ -983,7 +965,7 @@ show_verbose(struct device *d)
       (FLAG(cmd, PCI_COMMAND_MEMORY) == '-') ||
       (FLAG(cmd, PCI_COMMAND_MASTER) == '-') ) {
     byte command = (byte)(cmd | 0x7);
-    set_conf_byte(d, PCI_COMMAND, command);
+    pci_write_byte(d->dev, PCI_COMMAND, command);
   }
 
   pci_fill_info(p, PCI_FILL_IRQ | PCI_FILL_BASES | PCI_FILL_ROM_BASE | PCI_FILL_SIZES |
@@ -991,27 +973,27 @@ show_verbose(struct device *d)
   irq = p->irq;
 
   switch (htype)
-    {
-    case PCI_HEADER_TYPE_NORMAL:
-      if (class == PCI_CLASS_BRIDGE_PCI)
-	printf("\t!!! Invalid class %04x for header type %02x\n", class, htype);
-      max_lat = get_conf_byte(d, PCI_MAX_LAT);
-      min_gnt = get_conf_byte(d, PCI_MIN_GNT);
-      break;
-    case PCI_HEADER_TYPE_BRIDGE:
-      if ((class >> 8) != PCI_BASE_CLASS_BRIDGE)
-	printf("\t!!! Invalid class %04x for header type %02x\n", class, htype);
-      min_gnt = max_lat = 0;
-      break;
-    case PCI_HEADER_TYPE_CARDBUS:
-      if ((class >> 8) != PCI_BASE_CLASS_BRIDGE)
-	printf("\t!!! Invalid class %04x for header type %02x\n", class, htype);
-      min_gnt = max_lat = 0;
-      break;
-    default:
-      printf("\t!!! Unknown header type %02x\n", htype);
-      return;
-    }
+  {
+  case PCI_HEADER_TYPE_NORMAL:
+    if (class == PCI_CLASS_BRIDGE_PCI)
+      printf("\t!!! Invalid class %04x for header type %02x\n", class, htype);
+    max_lat = get_conf_byte(d, PCI_MAX_LAT);
+    min_gnt = get_conf_byte(d, PCI_MIN_GNT);
+    break;
+  case PCI_HEADER_TYPE_BRIDGE:
+    if ((class >> 8) != PCI_BASE_CLASS_BRIDGE)
+      printf("\t!!! Invalid class %04x for header type %02x\n", class, htype);
+    min_gnt = max_lat = 0;
+    break;
+  case PCI_HEADER_TYPE_CARDBUS:
+    if ((class >> 8) != PCI_BASE_CLASS_BRIDGE)
+      printf("\t!!! Invalid class %04x for header type %02x\n", class, htype);
+    min_gnt = max_lat = 0;
+    break;
+  default:
+    printf("\t!!! Unknown header type %02x\n", htype);
+    return;
+  }
 
   if (p->phy_slot)
     printf("\tPhysical Slot: %s\n", p->phy_slot);
@@ -1020,21 +1002,21 @@ show_verbose(struct device *d)
     printf("\tDevice tree node: %s\n", dt_node);
 
   switch (htype)
-    {
-    case PCI_HEADER_TYPE_NORMAL:
-      show_htype0(d);
-      break;
-    case PCI_HEADER_TYPE_BRIDGE:
-      show_htype1(d);
-      break;
-    case PCI_HEADER_TYPE_CARDBUS:
-      show_htype2(d);
-      break;
-    }
+  {
+  case PCI_HEADER_TYPE_NORMAL:
+    show_htype0(d);
+    break;
+  case PCI_HEADER_TYPE_BRIDGE:
+    show_htype1(d);
+    break;
+  case PCI_HEADER_TYPE_CARDBUS:
+    show_htype2(d);
+    break;
+  }
+  printf("\n");
 }
 
 /*** Machine-readable dumps ***/
-
 static void show_hex_dump(struct device *d)
 {
   unsigned int i, cnt;
@@ -1140,16 +1122,16 @@ void show_device(struct device *d)
   if (opt_machine)
     show_machine(d); // not used by Adna
   else
-    {
-      if (verbose)
-	show_verbose(d);
-      else
-	show_terse(d);
+  {
+    if (verbose)
+      show_verbose(d);
+    else 
+      show_terse(d);
 #ifndef ADNA
-      if (opt_kernel || verbose)
-	show_kernel(d);
+    if (opt_kernel || verbose)
+      show_kernel(d);
 #endif // ADNA
-    }
+  }
   if (opt_hex)
     show_hex_dump(d);
   if (verbose || opt_hex)
@@ -1162,7 +1144,7 @@ static void show(void)
 
   for (d=first_dev; d; d=d->next)
     if (pci_filter_match(&filter, d->dev))
-      show_device(d);
+      show_verbose(d);
 }
 
 static void str_to_bin(char *binary_data, const char *serialnumber)
@@ -1605,7 +1587,8 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 /* Main */
 int main(int argc, char **argv)
 {
-  int NumDevices = 1;
+  g_is_d0_flag = 1;
+  int NumDevices = 0;
   int status = EXIT_SUCCESS;
 
   if (argc == 2 && !strcmp(argv[1], "--version")) {
@@ -1624,18 +1607,24 @@ int main(int argc, char **argv)
   verbose = 2; // flag used by pci process
   pci_init(pacc);
   scan_devices();
-  sort_them(&NumDevices);
-  show();
+  sort_them();
+  NumDevices = count_upstream();
+  adnatool_refresh_device_cache();
 
   // Check devices exist and one was selected
-  if (NumDevices == 1) {
+  if (NumDevices == 0) {
     printf("No Adnacom device detected.\n");
     goto __exit;
   }
 
+  show();
+
   if (EepOptions.bListOnly == true) {
     goto __exit;
-  }
+  } else if (g_is_d0_flag == 0) {
+    printf("\tRerun program for Power State changes to take effect.\n");
+    goto __exit;
+  } else {}
 
   printf("[0] Cancel\n\n");
   char line[10];
@@ -1644,7 +1633,7 @@ int main(int argc, char **argv)
   while (fgets(line, sizeof(line), stdin) != NULL) {
     if (sscanf(line, "%d", &num) == 1) {
       if ((num == 0) ||
-          (num >= NumDevices)) {
+          (num > NumDevices)) {
             goto __exit;
       } else {
         break;
