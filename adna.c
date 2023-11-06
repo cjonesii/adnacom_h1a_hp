@@ -1154,6 +1154,77 @@ static void show(void)
       show_verbose(d);
 }
 
+static int save_to_adna_list(void)
+{
+  struct device *d;
+  struct adna_device *a;
+
+  for (d=first_dev; d; d=d->next) {
+    if (d->NumDevice) {
+      a = xmalloc(sizeof(struct adna_device));
+      memset(a, 0, sizeof(*a));
+      a->devnum = d->NumDevice;
+      a->bus = d->dev->bus;
+      a->dev = d->dev->dev;
+      a->func = d->dev->func;
+      a->bIsD3 = false;
+      a->next = first_adna;
+      first_adna = a;
+    }
+  }
+  return 0;
+}
+
+static int adna_pacc_cleanup(void)
+{
+  show_kernel_cleanup();
+  pci_cleanup(pacc);
+  return 0;
+}
+
+static int adna_pacc_init(void)
+{
+  pacc = pci_alloc();
+  pacc->error = die;
+  pci_filter_init(pacc, &filter);
+  pci_init(pacc);
+  return 0;
+}
+
+static int adna_pci_process(void)
+{
+  adna_pacc_init();
+  scan_devices();
+  sort_them();
+
+  NumDevices = count_upstream();
+  if (NumDevices == 0) {
+    printf("No Adnacom device detected.\n");
+    return -1;
+  }
+
+  save_to_adna_list();
+  show();
+
+  adna_pacc_cleanup();
+
+  return 0;
+}
+
+//
+// Set CAP_PM of D3 devices
+//  
+// Rescan device and select from adnacom list
+
+void adna_set_d3_flag(int devnum)
+{
+  struct adna_device *a;
+  for (a = first_adna; a; a=a->next) {
+    if (a->devnum == devnum)
+      a->bIsD3 = true;
+  }
+}
+
 static void str_to_bin(char *binary_data, const char *serialnumber)
 {
   // Initialize the binary_data buffer
@@ -1432,19 +1503,29 @@ static uint8_t EepFile(struct device *d)
 
 static int eep_process(int j)
 {
-    struct device *d;
-    int eep_present = EEP_PRSNT_MAX;
-    uint32_t read;
-    int status = EXIT_FAILURE;
+  struct device *d;
+  struct adna_device *a;
+  int eep_present = EEP_PRSNT_MAX;
+  uint32_t read;
+  int status = EXIT_FAILURE;
 
-    for (d=first_dev; d; d=d->next) {
-        if (d->NumDevice == j) {
+  adna_pacc_init();
+  scan_devices();
+  sort_them();
+
+  for (a=first_adna; a; a=a->next) { // loop through adnacom device list
+    if (j == a->devnum) {          // to locate the target NumDevice
+      for (d=first_dev; d; d=d->next) { // loop through the pacc list
+        if ((a->bus == d->dev->bus) &&
+            (a->dev == d->dev->dev) &&
+            (a->func == d->dev->func)) { // to locate the pci dev
+
           read = pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0);
           if (read == PCI_MEM_ERROR) {
             printf("Unexpected error. Exiting.\n");
             exit(-1);
           }
-  
+
           eep_present = (read >> EEP_PRSNT_OFFSET) & 3;;
 
           switch (eep_present) {
@@ -1468,9 +1549,12 @@ static int eep_process(int j)
               return status;
           }
         }
+      }
     }
-  
-    return status;
+  }
+
+  adna_pacc_cleanup();
+  return status;
 }
 
 static void DisplayHelp(void)
@@ -1591,77 +1675,6 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
-static int save_to_adna_list(void)
-{
-  struct device *d;
-  struct adna_device *a;
-
-  for (d=first_dev; d; d=d->next) {
-    if (d->NumDevice) {
-      a = xmalloc(sizeof(struct adna_device));
-      memset(a, 0, sizeof(*a));
-      a->devnum = d->NumDevice;
-      a->bus = d->dev->bus;
-      a->dev = d->dev->dev;
-      a->func = d->dev->func;
-      a->bIsD3 = false;
-      a->next = first_adna;
-      first_adna = a;
-    }
-  }
-  return 0;
-}
-
-static int adna_pacc_cleanup(void)
-{
-  show_kernel_cleanup();
-  pci_cleanup(pacc);
-  return 0;
-}
-
-static int adna_pacc_init(void)
-{
-  pacc = pci_alloc();
-  pacc->error = die;
-  pci_filter_init(pacc, &filter);
-  pci_init(pacc);
-  return 0;
-}
-
-static int adna_pci_process(void)
-{
-  adna_pacc_init();
-  scan_devices();
-  sort_them();
-
-  NumDevices = count_upstream();
-  if (NumDevices == 0) {
-    printf("No Adnacom device detected.\n");
-    return -1;
-  }
-
-  save_to_adna_list();
-  show();
-
-  adna_pacc_cleanup();
-
-  return 0;
-}
-
-//
-// Set CAP_PM of D3 devices
-//  
-// Rescan device and select from adnacom list
-
-void adna_set_d3_flag(int devnum)
-{
-  struct adna_device *a;
-  for (a = first_adna; a; a=a->next) {
-    if (a->devnum == devnum)
-      a->bIsD3 = true;
-  }
-}
-
 /* Main */
 int main(int argc, char **argv)
 {
@@ -1680,6 +1693,8 @@ int main(int argc, char **argv)
   status = adna_pci_process();
   if (status != EXIT_SUCCESS)
     exit(1);
+
+  // adna_d3_to_d0();
 
   if (EepOptions.bListOnly == true)
     goto __exit;
@@ -1701,6 +1716,8 @@ int main(int argc, char **argv)
       goto __exit;
     }
   }
+
+  // Regenerate List
 
   status = eep_process(num);
   if (status == EXIT_FAILURE)
