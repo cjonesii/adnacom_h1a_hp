@@ -1226,7 +1226,7 @@ static int adna_d3_to_d0(void)
 {
   struct adna_device *a;
   char *argv[4];
-  int status = EXIT_FAILURE;
+  int status = EXIT_SUCCESS;
 
   for (int i = 0; i < 4; i++) {
     argv[i] = malloc(14);
@@ -1254,6 +1254,8 @@ static int adna_d3_to_d0(void)
                a->dev,
                a->func);
       status = setpci(4, argv);
+      if (EXIT_FAILURE == status)
+        return status;
     }
   }
 
