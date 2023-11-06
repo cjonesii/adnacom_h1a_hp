@@ -92,15 +92,15 @@ static int adnatool_refresh_device_cache(void)
     /* let's refresh the pcidev details */
     if (!d->dev->cache) {
             u8 *cache;
-            if ((cache = calloc(1, 64)) == NULL) {
+            if ((cache = calloc(1, 128)) == NULL) {
                     fprintf(stderr, "error allocating pci device config cache!\n");
                     exit(-1);
             }
-            pci_setup_cache(d->dev, cache, 64);
+            pci_setup_cache(d->dev, cache, 128);
     }
 
     /* refresh the config block */
-    if (!pci_read_block(d->dev, 0, d->dev->cache, 64)) {
+    if (!pci_read_block(d->dev, 0, d->dev->cache, 128)) {
             fprintf(stderr, "error reading pci device config!\n");
             return -1;
     }
@@ -447,12 +447,12 @@ struct device *scan_device(struct pci_dev *p)
   d = xmalloc(sizeof(struct device));
   memset(d, 0, sizeof(*d));
   d->dev = p;
-  d->config_cached = d->config_bufsize = 64;
-  d->config = xmalloc(64);
-  d->present = xmalloc(64);
-  memset(d->present, 1, 64);
+  d->config_cached = d->config_bufsize = 128;
+  d->config = xmalloc(128);
+  d->present = xmalloc(128);
+  memset(d->present, 1, 128);
 
-  if (!pci_read_block(p, 0, d->config, 64)) {
+  if (!pci_read_block(p, 0, d->config, 128)) {
     fprintf(stderr, "adna: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
             p->domain, p->bus, p->dev, p->func);
     seen_errors++;
