@@ -107,8 +107,8 @@ static void PCI_PRINTF(1, 2)
 {
   va_list args;
   va_start(args, fmt);
-  if (verbose)
-    vprintf(fmt, args);
+  // if (verbose)
+  //   vprintf(fmt, args);
   va_end(args);
 }
 

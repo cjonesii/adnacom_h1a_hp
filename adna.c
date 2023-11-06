@@ -1226,6 +1226,7 @@ static int adna_d3_to_d0(void)
 {
   struct adna_device *a;
   char *argv[4];
+  int status = EXIT_FAILURE;
 
   for (int i = 0; i < 4; i++) {
     argv[i] = malloc(14);
@@ -1252,7 +1253,7 @@ static int adna_d3_to_d0(void)
                a->bus,
                a->dev,
                a->func);
-      setpci(4, argv);
+      status = setpci(4, argv);
     }
   }
 
@@ -1260,7 +1261,7 @@ static int adna_d3_to_d0(void)
     free(argv[i]);
   }
 
-  return 0;
+  return status;
 }
 
 static void str_to_bin(char *binary_data, const char *serialnumber)
@@ -1355,7 +1356,8 @@ static uint8_t EepromFileLoad(struct device *d)
     // Load serial number
     printf("Load Serial Number\n");
     for (uint8_t i = 0; i < FileSize; i++) {
-      if (g_pBuffer[i] == 0x42) {
+      if ((g_pBuffer[i] == 0x42) && 
+          (g_pBuffer[i+1] == 0x00)) {
         g_pBuffer[i+5] = EepOptions.SerialNumber[0];
         g_pBuffer[i+4] = EepOptions.SerialNumber[1];
         g_pBuffer[i+3] = EepOptions.SerialNumber[2];
@@ -1504,7 +1506,8 @@ static uint8_t EepromFileSave(struct device *d)
       // Save serial number
       printf("Save Serial Number to buffer\n");
       for (uint8_t i = 0; i < EepSize; i++) {
-        if (g_pBuffer[i] == 0x42) {
+        if ((g_pBuffer[i] == 0x42) && 
+            (g_pBuffer[i+1] == 0x00)) {
           EepOptions.SerialNumber[0] = g_pBuffer[i+5];
           EepOptions.SerialNumber[1] = g_pBuffer[i+4];
           EepOptions.SerialNumber[2] = g_pBuffer[i+3];
