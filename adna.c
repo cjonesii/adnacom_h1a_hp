@@ -1435,7 +1435,7 @@ static int eep_process(int j)
     struct device *d;
     int eep_present = EEP_PRSNT_MAX;
     uint32_t read;
-    int status = EXIT_SUCCESS;
+    int status = EXIT_FAILURE;
 
     for (d=first_dev; d; d=d->next) {
         if (d->NumDevice == j) {
@@ -1450,16 +1450,15 @@ static int eep_process(int j)
           switch (eep_present) {
           case NOT_PRSNT:
               printf("No EEPROM Present\n");
-              status = EXIT_FAILURE;
           break;
           case PRSNT_VALID:
               printf("EEPROM present with valid data\n");
+              status = EXIT_SUCCESS;
           break;
           case PRSNT_INVALID:
               printf("Present but invalid data/CRC error/blank\n");
               eep_init(d);
               printf("EEPROM initialization done, please restart your computer.\n");
-              status = EXIT_FAILURE;
           break;
           }
 
@@ -1470,6 +1469,7 @@ static int eep_process(int j)
           }
         }
     }
+  
     return status;
 }
 
