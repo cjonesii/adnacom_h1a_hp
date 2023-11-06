@@ -20,6 +20,8 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include "setpci.h"
+
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
 #define ADNATOOL_VERSION    "0.0.1"
@@ -1211,11 +1213,6 @@ static int adna_pci_process(void)
   return 0;
 }
 
-//
-// Set CAP_PM of D3 devices
-//  
-// Rescan device and select from adnacom list
-
 void adna_set_d3_flag(int devnum)
 {
   struct adna_device *a;
@@ -1223,6 +1220,47 @@ void adna_set_d3_flag(int devnum)
     if (a->devnum == devnum)
       a->bIsD3 = true;
   }
+}
+
+static int adna_d3_to_d0(void)
+{
+  struct adna_device *a;
+  char *argv[4];
+
+  for (int i = 0; i < 4; i++) {
+    argv[i] = malloc(14);
+  }
+
+  snprintf(argv[0],
+           14,
+           "%s",
+           "setpci");
+
+  snprintf(argv[1],
+           14,
+           "-s");
+  snprintf(argv[3],
+           14,
+           "%s",
+           "CAP_PM+4.b=0");
+
+  for (a=first_adna; a; a=a->next) {
+    if (a->bIsD3 == true) {
+      snprintf(argv[2], 
+               14,
+               "%02x:%02x.%d",
+               a->bus,
+               a->dev,
+               a->func);
+      setpci(4, argv);
+    }
+  }
+
+  for (int i = 0; i < 4; i++) {
+    free(argv[i]);
+  }
+
+  return 0;
 }
 
 static void str_to_bin(char *binary_data, const char *serialnumber)
@@ -1694,7 +1732,9 @@ int main(int argc, char **argv)
   if (status != EXIT_SUCCESS)
     exit(1);
 
-  // adna_d3_to_d0();
+  status = adna_d3_to_d0();
+  if (status != EXIT_SUCCESS)
+    exit(1);
 
   if (EepOptions.bListOnly == true)
     goto __exit;
@@ -1716,8 +1756,6 @@ int main(int argc, char **argv)
       goto __exit;
     }
   }
-
-  // Regenerate List
 
   status = eep_process(num);
   if (status == EXIT_FAILURE)
