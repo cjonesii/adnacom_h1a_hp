@@ -34,8 +34,7 @@ static int opt_machine;   /* Generate machine-readable output */
 static int opt_domains;   /* Show domain numbers (0=disabled, 1=auto-detected, 2=requested) */
 static int opt_kernel;    /* Show kernel drivers */
 char *opt_pcimap;         /* Override path to Linux modules.pcimap */
-int g_is_d0_flag;         /* BAR0 not writable flag. Exit early and prompt for rerun */
-
+static int NumDevices = 0;
 const char program_name[] = "adna";
 char g_h1a_us_port_bar0[256] = "\0";
 uint8_t *g_pBuffer = NULL;
@@ -45,6 +44,7 @@ struct eep_options EepOptions;
 
 struct pci_access *pacc;
 struct device *first_dev = NULL;
+struct adna_device *first_adna = NULL;
 static int seen_errors;
 static int need_topology;
 
@@ -75,6 +75,13 @@ struct eep_options {
   bool bSerialNumber;
 };
 
+struct adna_device {
+  struct adna_device *next;
+  u8 bus, dev, func;  /* Bus inside domain, device and function */
+  bool bIsD3;         /* Power state */
+  int devnum;         /* Assigned NumDevice */
+};
+
 int pci_get_devtype(struct pci_dev *pdev);
 bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
@@ -84,7 +91,7 @@ void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
 void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer);
 void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer);
 void eep_init(struct device *d);
-
+#ifndef ADNA
 static int adnatool_refresh_device_cache(void)
 {
   struct device *d;
@@ -108,7 +115,7 @@ static int adnatool_refresh_device_cache(void)
 
   return 0;
 }
-
+#endif
 static void pci_get_res0(struct pci_dev *pdev, char *path, size_t pathlen)
 {
   snprintf(path, 
@@ -447,12 +454,12 @@ struct device *scan_device(struct pci_dev *p)
   d = xmalloc(sizeof(struct device));
   memset(d, 0, sizeof(*d));
   d->dev = p;
-  d->config_cached = d->config_bufsize = 128;
-  d->config = xmalloc(128);
-  d->present = xmalloc(128);
-  memset(d->present, 1, 128);
+  d->config_cached = d->config_bufsize = 256;
+  d->config = xmalloc(256);
+  d->present = xmalloc(256);
+  memset(d->present, 1, 256);
 
-  if (!pci_read_block(p, 0, d->config, 128)) {
+  if (!pci_read_block(p, 0, d->config, 256)) {
     fprintf(stderr, "adna: Unable to read the standard configuration space header of device %04x:%02x:%02x.%d\n",
             p->domain, p->bus, p->dev, p->func);
     seen_errors++;
@@ -1584,11 +1591,81 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
     return EXIT_SUCCESS;
 }
 
+static int save_to_adna_list(void)
+{
+  struct device *d;
+  struct adna_device *a;
+
+  for (d=first_dev; d; d=d->next) {
+    if (d->NumDevice) {
+      a = xmalloc(sizeof(struct adna_device));
+      memset(a, 0, sizeof(*a));
+      a->devnum = d->NumDevice;
+      a->bus = d->dev->bus;
+      a->dev = d->dev->dev;
+      a->func = d->dev->func;
+      a->bIsD3 = false;
+      a->next = first_adna;
+      first_adna = a;
+    }
+  }
+  return 0;
+}
+
+static int adna_pacc_cleanup(void)
+{
+  show_kernel_cleanup();
+  pci_cleanup(pacc);
+  return 0;
+}
+
+static int adna_pacc_init(void)
+{
+  pacc = pci_alloc();
+  pacc->error = die;
+  pci_filter_init(pacc, &filter);
+  pci_init(pacc);
+  return 0;
+}
+
+static int adna_pci_process(void)
+{
+  adna_pacc_init();
+  scan_devices();
+  sort_them();
+
+  NumDevices = count_upstream();
+  if (NumDevices == 0) {
+    printf("No Adnacom device detected.\n");
+    return -1;
+  }
+
+  save_to_adna_list();
+  show();
+
+  adna_pacc_cleanup();
+
+  return 0;
+}
+
+//
+// Set CAP_PM of D3 devices
+//  
+// Rescan device and select from adnacom list
+
+void adna_set_d3_flag(int devnum)
+{
+  struct adna_device *a;
+  for (a = first_adna; a; a=a->next) {
+    if (a->devnum == devnum)
+      a->bIsD3 = true;
+  }
+}
+
 /* Main */
 int main(int argc, char **argv)
 {
-  g_is_d0_flag = 1;
-  int NumDevices = 0;
+  verbose = 2; // flag used by pci process
   int status = EXIT_SUCCESS;
 
   if (argc == 2 && !strcmp(argv[1], "--version")) {
@@ -1600,31 +1677,12 @@ int main(int argc, char **argv)
   if (status != EXIT_SUCCESS)
     exit(1);
 
-  pacc = pci_alloc();
-  pacc->error = die;
-  pci_filter_init(pacc, &filter);
+  status = adna_pci_process();
+  if (status != EXIT_SUCCESS)
+    exit(1);
 
-  verbose = 2; // flag used by pci process
-  pci_init(pacc);
-  scan_devices();
-  sort_them();
-  NumDevices = count_upstream();
-  adnatool_refresh_device_cache();
-
-  // Check devices exist and one was selected
-  if (NumDevices == 0) {
-    printf("No Adnacom device detected.\n");
+  if (EepOptions.bListOnly == true)
     goto __exit;
-  }
-
-  show();
-
-  if (EepOptions.bListOnly == true) {
-    goto __exit;
-  } else if (g_is_d0_flag == 0) {
-    printf("\tRerun program for Power State changes to take effect.\n");
-    goto __exit;
-  } else {}
 
   printf("[0] Cancel\n\n");
   char line[10];
@@ -1649,8 +1707,5 @@ int main(int argc, char **argv)
     goto __exit;
 
 __exit:
-  show_kernel_cleanup();
-  pci_cleanup(pacc);
-
   return (seen_errors ? 2 : 0);
 }

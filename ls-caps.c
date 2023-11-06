@@ -14,7 +14,7 @@
 static void
 cap_pm(struct device *d, int where, int cap)
 {
-  int t, b, u;
+  int t, b;
 #ifndef ADNA
   static int pm_aux_current[8] = { 0, 55, 100, 160, 220, 270, 320, 375 };
   printf("Power Management version %d\n", cap & PCI_PM_CAP_VER_MASK);
@@ -53,17 +53,8 @@ cap_pm(struct device *d, int where, int cap)
 #else
   printf("\tPower State: D%d\n", t & PCI_PM_CTRL_STATE_MASK); 
   // Ensure PM state is D0 (PM 04h[1:0]=0)
-  if ((t & 0x3) != PCI_CAP_PM_STATE_D0) {
-    g_is_d0_flag = 0;
-    printf("\t  Transitioning Power State to D0(Active)... ");
-    t &= ~(word)0x3;
-    t |= (PCI_CAP_PM_STATE_D0 << 0);
-    pci_write_word(d->dev, where + PCI_PM_CTRL, (word)t);
-    int i = 0;
-    while(10000 > i++);
-    u = pci_read_word(d->dev, where + PCI_PM_CTRL);
-    printf("%s\n", ((u & 0x3) != PCI_CAP_PM_STATE_D0) ? " not Ok" : " Ok");
-  }
+  if ((t & 0x3) != PCI_CAP_PM_STATE_D0)
+    adna_set_d3_flag(d->NumDevice);
 #endif
 }
 #ifndef ADNA

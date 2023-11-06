@@ -37,7 +37,6 @@ extern struct pci_filter filter;
 extern char *opt_pcimap;
 extern struct device *first_dev;
 extern struct pci_access *pacc;
-extern int g_is_d0_flag;
 
 struct device *scan_device(struct pci_dev *p);
 void show_device(struct device *d);
@@ -125,3 +124,4 @@ void show_forest(struct pci_filter *filter);
 /* ls-map.c */
 
 void map_the_bus(void);
+void adna_set_d3_flag(int devnum);
