@@ -2,7 +2,7 @@
 # (c) 1998--2020 Martin Mares <mj@ucw.cz>
 
 OPT=-O0
-CFLAGS=$(OPT) -Wall -W -Wno-parentheses -Wstrict-prototypes -Wmissing-prototypes -g
+CFLAGS=$(OPT) -Wall -W -Wno-parentheses -Wstrict-prototypes -Wmissing-prototypes -Wno-missing-braces -g -std=gnu99
 
 VERSION=3.7.0
 DATE=2020-05-31
