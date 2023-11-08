@@ -59,7 +59,7 @@ static bool initialized = false;
 /*** Our view of the PCI bus ***/
 
 struct pci_access *pacc;
-struct device *first_dev = NULL;
+struct device *first_dev;
 struct adna_device *first_adna = NULL;
 static int seen_errors;
 static int need_topology;
@@ -1789,6 +1789,8 @@ int main(int argc, char **argv)
     // status = adna_d3_to_d0();
     // if (status != EXIT_SUCCESS)
     //   exit(1);
+    first_dev = NULL;
+    first_adna = NULL;
   }
 #if 0
   if (EepOptions.bListOnly == true)
