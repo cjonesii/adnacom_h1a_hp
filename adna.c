@@ -24,6 +24,15 @@
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
+#define PLX_H18_DEVICE_ID   (0x8718)
+
+#define ASMEDIA_CLASS_ID    (0x0C03)
+#define ASMEDIA_VENDOR_ID   (0x1B21)
+#define ASMEDIA_DEVICE_ID   (0x2142)
+
+#define TI_CLASS_ID         (0x0C03)
+#define TI_VENDOR_ID        (0x104C)
+#define TI_DEVICE_ID        (0x8241)
 #define ADNATOOL_VERSION    "0.0.1"
 
 /* Options */
@@ -57,6 +66,9 @@ struct adnatool_pci_device {
 } adnatool_pci_devtbl[] = {
 #if 1
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+        { .vid = PLX_VENDOR_ID,     .did = PLX_H18_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+        { .vid = ASMEDIA_VENDOR_ID, .did = ASMEDIA_DEVICE_ID, .cls_rev = PCI_CLASS_SERIAL_USB, },
+        { .vid = TI_VENDOR_ID,      .did = TI_DEVICE_ID,      .cls_rev = PCI_CLASS_SERIAL_USB, },
 #else
         /* for debugging purpose, put in some actual PCI devices i have 
          * in my system. TODO: remove these! */
@@ -1265,7 +1277,7 @@ static int adna_d3_to_d0(void)
 
   return status;
 }
-
+#if 0
 static void str_to_bin(char *binary_data, const char *serialnumber)
 {
   // Initialize the binary_data buffer
@@ -1717,6 +1729,7 @@ static uint8_t ProcessCommandLine(int argc, char *argv[])
 
     return EXIT_SUCCESS;
 }
+#endif
 
 /* Main */
 int main(int argc, char **argv)
@@ -1729,18 +1742,21 @@ int main(int argc, char **argv)
     return 0;
   }
 
+#if 0
   status = ProcessCommandLine(argc, argv);
   if (status != EXIT_SUCCESS)
     exit(1);
+#endif
+  while (1) {
+    status = adna_pci_process();
+    if (status != EXIT_SUCCESS)
+      exit(1);
 
-  status = adna_pci_process();
-  if (status != EXIT_SUCCESS)
-    exit(1);
-
-  status = adna_d3_to_d0();
-  if (status != EXIT_SUCCESS)
-    exit(1);
-
+    status = adna_d3_to_d0();
+    if (status != EXIT_SUCCESS)
+      exit(1);
+  }
+#if 0
   if (EepOptions.bListOnly == true)
     goto __exit;
 
@@ -1767,5 +1783,7 @@ int main(int argc, char **argv)
     goto __exit;
 
 __exit:
+#endif
+
   return (seen_errors ? 2 : 0);
 }
