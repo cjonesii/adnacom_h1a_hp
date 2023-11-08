@@ -1300,8 +1300,6 @@ static int adna_d3_to_d0(void)
     free(argv[i]);
   }
 
-  adna_pacc_cleanup();
-
   return status;
 }
 #if 0
