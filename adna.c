@@ -1777,10 +1777,10 @@ int main(int argc, char **argv)
   while (1) {
     usleep(100 * 1000); //100ms
 
-    if (initialized) {
-      adnacom_deinitialize();
-      initialized = false;
-    }
+    // if (initialized) {
+    //   adnacom_deinitialize();
+    //   initialized = false;
+    // }
     
     status = adna_pci_process();
     if (status != EXIT_SUCCESS)
