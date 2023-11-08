@@ -240,7 +240,7 @@ execute(void)
         exec_op(op, dev);
     }
 
-    // free(vec);
+    free(vec);
   }
 }
 

@@ -1786,9 +1786,9 @@ int main(int argc, char **argv)
     if (status != EXIT_SUCCESS)
       exit(1);
 
-    status = adna_d3_to_d0();
-    if (status != EXIT_SUCCESS)
-      exit(1);
+    // status = adna_d3_to_d0();
+    // if (status != EXIT_SUCCESS)
+    //   exit(1);
   }
 #if 0
   if (EepOptions.bListOnly == true)
