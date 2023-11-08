@@ -35,6 +35,9 @@
 #define TI_DEVICE_ID        (0x8241)
 #define ADNATOOL_VERSION    "0.0.1"
 
+#define foreach_pci_device(acc, p) \
+  for ((p) = (acc)->devices; (p) != NULL; (p) = (p)->next)
+
 /* Options */
 
 int verbose;              /* Show detailed information */
@@ -50,6 +53,8 @@ const char program_name[] = "adna";
 char g_h1a_us_port_bar0[256] = "\0";
 uint8_t *g_pBuffer = NULL;
 struct eep_options EepOptions;
+
+static bool initialized = false;
 
 /*** Our view of the PCI bus ***/
 
@@ -496,6 +501,26 @@ static void scan_devices(void)
       d->next = first_dev;
       first_dev = d;
     }
+}
+
+static void adnacom_deinitialize(void)
+{
+  struct pci_dev *pdev;
+  foreach_pci_device(pacc, pdev) {
+    if (!pcidev_is_adnacom(pdev)) {
+      continue;
+    }
+    /* just release the device cache */
+    if (pdev->cache) {
+      free(pdev->cache);
+      pdev->cache_len = 0;
+      pci_setup_cache(pdev, NULL, 0);
+    }
+  }
+
+  pci_cleanup(pacc);
+  pacc = NULL;
+  return;
 }
 
 /*** Config space accesses ***/
@@ -1750,6 +1775,13 @@ int main(int argc, char **argv)
     exit(1);
 #endif
   while (1) {
+    usleep(100 * 1000); //100ms
+
+    if (initialized) {
+      adnacom_deinitialize();
+      initialized = false;
+    }
+    
     status = adna_pci_process();
     if (status != EXIT_SUCCESS)
       exit(1);
