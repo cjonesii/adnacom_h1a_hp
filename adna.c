@@ -1193,6 +1193,16 @@ static void show(void)
       show_verbose(d);
 }
 
+static int delete_adna_list(void)
+{
+  struct adna_device *a, *b;
+  for (a=first_adna;a;a=b) {
+    b=a->next;
+    free(a);
+  }
+  return 0;
+}
+
 static int save_to_adna_list(void)
 {
   struct device *d;
@@ -1770,16 +1780,20 @@ int main(int argc, char **argv)
   while (1) {
     usleep(100 * 1000); //100ms
 
-    if (initialized) {
-      adnacom_deinitialize();
-      initialized = false;
-    }
+    // if (initialized) {
+    //   adnacom_deinitialize();
+    //   initialized = false;
+    // }
     
     status = adna_pci_process();
     if (status != EXIT_SUCCESS)
       exit(1);
 
     status = adna_d3_to_d0();
+    if (status != EXIT_SUCCESS)
+      exit(1);
+
+    status = delete_adna_list();
     if (status != EXIT_SUCCESS)
       exit(1);
 
