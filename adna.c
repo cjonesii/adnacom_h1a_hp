@@ -19,8 +19,12 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <signal.h>
 
 #include "setpci.h"
+
+#include <time.h>
+#include <sys/time.h>
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
@@ -1195,35 +1199,65 @@ static int adna_d3_to_d0(void)
   return status;
 }
 
+
+static void timer_callback(int signum)
+{
+  printf("Oleh!\n");
+}
+
 /* Main */
 int main(int argc, char **argv)
 {
   verbose = 2; // flag used by pci process
   int status = EXIT_SUCCESS;
+  uint8_t remaining = 3; // arbitrary delay before first run
+
+  struct itimerval new_timer;
+  struct itimerval old_timer;
+
+  new_timer.it_value.tv_sec = 1;
+  new_timer.it_value.tv_usec = 0;
+  new_timer.it_interval.tv_sec = 0;
+  new_timer.it_interval.tv_usec = 100 * 1000;
 
   if (argc == 2 && !strcmp(argv[1], "--version")) {
     puts("Adnacom version " ADNATOOL_VERSION);
     return 0;
   }
 
-  while (1) {
-    usleep(100 * 1000); //100ms
+  // while (1) {
+  //   usleep(100 * 1000); //100ms
 
-    status = adna_pci_process();
-    if (status != EXIT_SUCCESS)
-      exit(1);
+  //   status = adna_pci_process();
+  //   if (status != EXIT_SUCCESS)
+  //     exit(1);
 
-    status = adna_d3_to_d0();
-    if (status != EXIT_SUCCESS)
-      exit(1);
+  //   status = adna_d3_to_d0();
+  //   if (status != EXIT_SUCCESS)
+  //     exit(1);
 
-    status = delete_adna_list();
-    if (status != EXIT_SUCCESS)
-      exit(1);
+  //   status = delete_adna_list();
+  //   if (status != EXIT_SUCCESS)
+  //     exit(1);
 
-    first_dev = NULL;
-    first_adna = NULL;
+  //   first_dev = NULL;
+  //   first_adna = NULL;
+  // }
+
+  setitimer(ITIMER_REAL, &new_timer, &old_timer);
+  signal(SIGALRM, timer_callback);
+
+  status = adna_pci_process();
+  if (status != EXIT_SUCCESS)
+    exit(1);
+
+  while (sleep(remaining) != 0) {
+    if (errno == EINTR) {
+      ;// PRINTF("Timer Interrupt ");
+    } else {
+      printf("Sleep error %s\n", strerror(errno));
+    }
   }
-
+  
   return (seen_errors ? 2 : 0);
 }
