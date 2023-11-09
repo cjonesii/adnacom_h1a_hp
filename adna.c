@@ -1214,7 +1214,7 @@ static void timer_callback(int signum)
   scan_devices();
   sort_them();
   grow_tree();
-  show(); // test print out
+
 #if 0
   for (a = first_adna; a; a=a->next) {
 
@@ -1294,6 +1294,7 @@ static void timer_callback(int signum)
   }
   fflush(stdout);
 #endif
+  printf("Oleh!\n");
 }
 
 /* Main */
