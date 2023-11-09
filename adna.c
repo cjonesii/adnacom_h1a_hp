@@ -1077,7 +1077,8 @@ static void show(void)
 
   for (d=first_dev; d; d=d->next)
     if (pci_filter_match(&filter, d->dev))
-      show_verbose(d);
+      if (!pci_is_upstream(d->dev))
+        show_verbose(d);
 }
 
 static int delete_adna_list(void)
