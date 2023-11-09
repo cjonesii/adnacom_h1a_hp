@@ -1209,6 +1209,8 @@ static void timer_callback(int signum)
 {
   (void)(signum);
   struct adna_device *a;
+  first_adna = NULL;
+  first_dev = NULL;
 
   adna_pacc_init();
   scan_devices();
