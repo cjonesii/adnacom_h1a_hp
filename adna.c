@@ -1205,12 +1205,95 @@ static int adna_d3_to_d0(void)
   return status;
 }
 
-
 static void timer_callback(int signum)
 {
   (void)(signum);
-  // Do not proces non-HP downstream devices
-  printf("Oleh!\n");
+  struct adna_device *a;
+
+  adna_pacc_init();
+  scan_devices();
+  sort_them();
+  grow_tree();
+  show(); // test print out
+#if 0
+  for (a = first_adna; a; a=a->next) {
+
+  }
+
+  uint32_t read_buffer;
+  uint32_t hotplug_buffer;
+  int linkStat = 0xff;
+  int linkQuality = LINK_QUALITY_MAX;
+  static int link_bad_count[H1A_PORT_CNT] = {0};
+  static int timeout[H1A_PORT_CNT] = {0};
+  static int ep_down_count[H1A_PORT_CNT] = {0};
+  int pri_bus = adnacom_get_runtime_value(H1A, PRI_BUS);
+
+  for (int i=0; i<H1A_PORT_CNT; i++) {
+      if (pri_bus == g_h1a_dev_struct[i].pri_bus)
+          continue;
+      if (    (0 == g_h1a_dev_struct[i].domain)
+            && (0 == g_h1a_dev_struct[i].pri_bus)
+            && (0 == g_h1a_dev_struct[i].dev)
+            && (0 == g_h1a_dev_struct[i].func))
+          continue;
+      hotplug_buffer = pcimem(REG_READ, g_h1a_dev_struct[i].hotplug, 0, H1A);
+      if ((INVALID_READ == hotplug_buffer) || (0x3 != ((hotplug_buffer >> 5) & 0x3))) {
+          adnacom_stoptimer();
+          printf("\n\nError: Please update your H1A EEPROM to enable Hotplug capability\n");
+          exit(1);
+      }
+      read_buffer = pcimem(REG_READ, g_h1a_dev_struct[i].linkup, 0, H1A);
+      if (INVALID_READ == read_buffer) {
+          PRINTF("Invalid link up value, resetting H1A upstream port...\n");
+          adnacom_stoptimer();
+          reset_h1a_root_port();
+          adnacom_settimer100ms();
+          continue;
+      }
+      linkStat = (read_buffer >> BIT29) & 1;
+      PRINTF("H1A DS Port %d Link is %s", (int)g_h1a_dev_struct[i].dev,
+              linkStat == H1A_LINK_IS_UP ? "Up" : "Down");
+      if ((H1A_LINK_IS_UP == linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
+          PRINTF(", was Down previously\n");
+          adnacom_stoptimer();
+          linkQuality = h1a_link_up_routine(i);
+          if ((IDEAL != linkQuality) || (WIDTH_DEGRADED != linkQuality)) {
+              link_bad_count[i]++;
+          }
+
+          if (EP_PRESENT != g_h1a_dev_struct[i].present) {
+              ep_down_count[i]++;
+          }
+
+          if ((LINK_RETRAIN_LIMIT <= link_bad_count[i]) || (LINK_RETRAIN_LIMIT <= ep_down_count[i])) {
+              link_bad_count[i] = 0;
+              ep_down_count[i] = 0;
+              reset_h1a_root_port();
+          }
+
+          adnacom_settimer100ms();
+      } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT == g_h1a_dev_struct[i].present)) {
+          PRINTF(", was Up previously\n");
+          adnacom_stoptimer();
+          h1a_link_down_routine(i);
+          adnacom_settimer100ms();
+      } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
+          timeout[i]++;
+          if (LINK_DOWN_TIMEOUT <= timeout[i]) {
+              PRINTF(" and has been Down for 1s\n");
+              timeout[i] = 0;
+              disable_port_in_h1a(i);
+              for (int noop = 0; noop < 100; noop++) { }
+              enable_port_in_h1a(i);
+          }
+      } else {
+          // MISRA-C compliance
+      }
+      PRINTF("\n");
+  }
+  fflush(stdout);
+#endif
 }
 
 /* Main */
@@ -1232,25 +1315,6 @@ int main(int argc, char **argv)
     puts("Adnacom version " ADNATOOL_VERSION);
     return 0;
   }
-
-  // while (1) {
-  //   usleep(100 * 1000); //100ms
-
-  //   status = adna_pci_process();
-  //   if (status != EXIT_SUCCESS)
-  //     exit(1);
-
-  //   status = adna_d3_to_d0();
-  //   if (status != EXIT_SUCCESS)
-  //     exit(1);
-
-  //   status = delete_adna_list();
-  //   if (status != EXIT_SUCCESS)
-  //     exit(1);
-
-  //   first_dev = NULL;
-  //   first_adna = NULL;
-  // }
 
   setitimer(ITIMER_REAL, &new_timer, &old_timer);
   signal(SIGALRM, timer_callback);
