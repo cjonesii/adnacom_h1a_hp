@@ -71,10 +71,11 @@ struct adnatool_pci_device {
 } adnatool_pci_devtbl[] = {
 #if 1
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
-        { .vid = PLX_VENDOR_ID,     .did = PLX_H18_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
+#else
+		{ .vid = PLX_VENDOR_ID,     .did = PLX_H18_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
         { .vid = ASMEDIA_VENDOR_ID, .did = ASMEDIA_DEVICE_ID, .cls_rev = PCI_CLASS_SERIAL_USB, },
         { .vid = TI_VENDOR_ID,      .did = TI_DEVICE_ID,      .cls_rev = PCI_CLASS_SERIAL_USB, },
-#else
+
         /* for debugging purpose, put in some actual PCI devices i have 
          * in my system. TODO: remove these! */
         { .vid = 0x8086, .did = 0x02b0, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
