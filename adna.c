@@ -526,12 +526,12 @@ static int compare_them(const void *A, const void *B)
   return 0;
 }
 
-static int count_upstream(void)
+static int count_downstream(void)
 {
   struct device *d;
   int i=0;
   for (d=first_dev; d; d=d->next) {
-    if (pci_is_upstream(d->dev))
+    if (!pci_is_upstream(d->dev))
       d->NumDevice = ++i;
     else
       d->NumDevice = 0;
@@ -1132,7 +1132,7 @@ static int adna_pci_process(void)
   scan_devices();
   sort_them();
 
-  NumDevices = count_upstream();
+  NumDevices = count_downstream();
   if (NumDevices == 0) {
     printf("No Adnacom device detected.\n");
     return -1;
