@@ -1202,6 +1202,7 @@ static int adna_d3_to_d0(void)
 
 static void timer_callback(int signum)
 {
+  (void)(signum);
   printf("Oleh!\n");
 }
 
@@ -1258,6 +1259,10 @@ int main(int argc, char **argv)
       printf("Sleep error %s\n", strerror(errno));
     }
   }
-  
+
+  status = delete_adna_list();
+  if (status != EXIT_SUCCESS)
+    exit(1);
+
   return (seen_errors ? 2 : 0);
 }
