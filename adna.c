@@ -1767,18 +1767,13 @@ int main(int argc, char **argv)
     return 0;
   }
 
-#if 0
-  status = ProcessCommandLine(argc, argv);
-  if (status != EXIT_SUCCESS)
-    exit(1);
-#endif
   while (1) {
     usleep(100 * 1000); //100ms
 
-    // if (initialized) {
-    //   adnacom_deinitialize();
-    //   initialized = false;
-    // }
+    if (initialized) {
+      adnacom_deinitialize();
+      initialized = false;
+    }
     
     status = adna_pci_process();
     if (status != EXIT_SUCCESS)
@@ -1791,34 +1786,6 @@ int main(int argc, char **argv)
     first_dev = NULL;
     first_adna = NULL;
   }
-#if 0
-  if (EepOptions.bListOnly == true)
-    goto __exit;
-
-  printf("[0] Cancel\n\n");
-  char line[10];
-  int num;
-  printf("    Device selection --> ");
-  while (fgets(line, sizeof(line), stdin) != NULL) {
-    if (sscanf(line, "%d", &num) == 1) {
-      if ((num == 0) ||
-          (num > NumDevices)) {
-            goto __exit;
-      } else {
-        break;
-      }
-    } else {
-      printf("    Invalid input\n");
-      goto __exit;
-    }
-  }
-
-  status = eep_process(num);
-  if (status == EXIT_FAILURE)
-    goto __exit;
-
-__exit:
-#endif
 
   return (seen_errors ? 2 : 0);
 }
