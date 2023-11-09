@@ -90,6 +90,7 @@ struct adna_device {
   u8 bus, dev, func;  /* Bus inside domain, device and function */
   bool bIsD3;         /* Power state */
   int devnum;         /* Assigned NumDevice */
+  struct pci_dev *parent;
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
@@ -1135,9 +1136,10 @@ static int adna_pci_process(void)
   NumDevices = count_downstream();
   if (NumDevices == 0) {
     printf("No Adnacom device detected.\n");
-    return -1;
+    return ENODEV;
   }
 
+  grow_tree();
   save_to_adna_list();
   show();
 
@@ -1203,6 +1205,7 @@ static int adna_d3_to_d0(void)
 static void timer_callback(int signum)
 {
   (void)(signum);
+  // Do not proces non-HP downstream devices
   printf("Oleh!\n");
 }
 
