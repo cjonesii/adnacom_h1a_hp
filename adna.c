@@ -90,7 +90,7 @@ struct adna_device {
   u8 bus, dev, func;  /* Bus inside domain, device and function */
   bool bIsD3;         /* Power state */
   int devnum;         /* Assigned NumDevice */
-  struct pci_dev *parent;
+  struct device *parent, *usbhub; /* The parent and the hub device */
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
@@ -120,7 +120,6 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
   int fd;
   void *map_base, *virt_addr;
   uint64_t read_result, writeval, prev_read_result = 0;
-  // char *filename;
   off_t target, target_base;
   int access_type = 'w';
   int items_count = 1;
@@ -1105,6 +1104,10 @@ static int save_to_adna_list(void)
       a->dev = d->dev->dev;
       a->func = d->dev->func;
       a->bIsD3 = false;
+      if (d->parent_bus->parent_bridge->br_dev != NULL)
+        a->parent = d->parent_bus->parent_bridge->br_dev;
+      if (d->bridge->first_bus->first_dev != NULL)
+        a->usbhub = d->bridge->first_bus->first_dev;
       a->next = first_adna;
       first_adna = a;
     }
