@@ -400,6 +400,11 @@ bool pci_is_upstream(struct pci_dev *pdev)
   return pci_get_devtype(pdev) == PCI_EXP_TYPE_UPSTREAM;
 }
 
+bool pci_is_downstream(struct pci_dev *pdev)
+{
+  return pci_get_devtype(pdev) == PCI_EXP_TYPE_DOWNSTREAM;
+}
+
 bool pcidev_is_adnacom(struct pci_dev *p)
 {
   struct adnatool_pci_device *entry;
@@ -550,7 +555,7 @@ static int count_downstream(void)
   int i=0;
   for (d=first_dev; d; d=d->next) {
     if (pci_filter_match(&filter, d->dev)) {
-      if (!pci_is_upstream(d->dev))
+      if (pci_is_downstream(d->dev))
         d->NumDevice = ++i;
       else
         d->NumDevice = 0;
