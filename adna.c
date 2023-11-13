@@ -95,9 +95,9 @@ struct eep_options {
 struct adna_device {
   struct adna_device *next;
   struct pci_filter *this, *parent, *hub;
-  bool bIsD3, bLinkCheck; /* Power state and Link Status */
+  bool bIsD3; /* Power state */
   int devnum;         /* Assigned NumDevice */
-  int dl_down_cnt, hub_down_cnt, link_bad_cnt; /* Error counters */
+  int link_down_cnt, hub_down_cnt, link_bad_cnt; /* Error counters */
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
@@ -1250,10 +1250,11 @@ static int save_to_adna_list(void)
       pci_filter_parse_id(f, mfg_str);
       a->this = f;
       a->bIsD3 = false;
-      a->bLinkCheck = false;
-      a->dl_down_cnt = 0;
+      a->link_down_cnt = 0;
       a->hub_down_cnt = 0;
       a->link_bad_cnt = 0;
+      a->parent = NULL;
+      a->hub = NULL;
       if (d->parent_bus->parent_bridge->br_dev != NULL) {
         parent = d->parent_bus->parent_bridge->br_dev;
         p = xmalloc(sizeof(struct pci_filter));
@@ -1541,22 +1542,23 @@ static void timer_callback(int signum)
     adnacom_stoptimer();
     h1a_link_down_routine(i);
     adnacom_settimer100ms();
-    } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
-    timeout[i]++;
-    if (LINK_DOWN_TIMEOUT <= timeout[i]) {
-    PRINTF(" and has been Down for 1s\n");
-    timeout[i] = 0;
-    disable_port_in_h1a(i);
-    for (int noop = 0; noop < 100; noop++) { }
-    enable_port_in_h1a(i);
-    }
+#endif
+    if ((0 == linkStat) && (NULL == a->hub)) {
+      a->link_down_cnt++;
+      if (10 <= a->link_down_cnt) {
+        printf(" and has been Down for 1s\n");
+        a->link_down_cnt = 0;
+        disable_port(a);
+        for (int noop = 0; noop < 100; noop++) { }
+        enable_port(a);
+      }
     } else {
     // MISRA-C compliance
     }
-    PRINTF("\n");
+
+    printf("\n");
   }
-#endif
-  }
+
   fflush(stdout);
 #endif
   printf("Oleh!\n");
