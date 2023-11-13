@@ -395,19 +395,26 @@ void eep_init(struct device *d)
 }
 
 /*! @brief Disables H1A downstream port in PCIe switch register */
-static void disable_port(struct pci_dev *p)
+static void disable_port(struct device *d)
 {
-  int ptControl = pcimem(p, H1A_DISABLE_PORT1_OFFSET, 0);
+  struct device *a;
+  if (NULL != d->parent_bus->parent_bridge->br_dev)
+    a = d->parent_bus->parent_bridge->br_dev;
+
+  int ptControl = pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl |= 1;
-  pcimem(p, H1A_DISABLE_PORT1_OFFSET, ptControl);
+  pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 
 /*! @brief Enables H1A downstream port in PCIe switch register */
-static void enable_port(struct pci_dev *p)
+static void enable_port(struct device *d)
 {
-  int ptControl = pcimem(p, H1A_DISABLE_PORT1_OFFSET, 0);
+  struct device *a;
+  if (NULL != d->parent_bus->parent_bridge->br_dev)
+    a = d->parent_bus->parent_bridge->br_dev;
+  int ptControl = pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl &= ~1;
-  pcimem(p, H1A_DISABLE_PORT1_OFFSET, ptControl);
+  pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 
 static char *link_compare(int sta, int cap)
@@ -1428,9 +1435,9 @@ static void timer_callback(int signum)
               (20 == a->hub_down_cnt)) {
             a->dl_down_cnt = 0;
             a->hub_down_cnt = 0;
-            disable_port(d->dev);
+            disable_port(d);
             for (int noop = 0; noop < 100; noop++) { }
-            enable_port(d->dev);
+            enable_port(d);
           }
         } else {
           ;//
