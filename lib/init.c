@@ -217,32 +217,32 @@ pci_init_v35(struct pci_access *a)
   if (a->method)
     {
       if (a->method >= PCI_ACCESS_MAX || !pci_methods[a->method])
-	a->error("This access method is not supported.");
+        a->error("This access method is not supported.");
       a->methods = pci_methods[a->method];
     }
   else
     {
       unsigned int i;
-      for (i=0; probe_sequence[i] >= 0; i++)
-	{
-	  struct pci_methods *m = pci_methods[probe_sequence[i]];
-	  if (!m)
-	    continue;
-	  a->debug("Trying method %s...", m->name);
-	  if (m->detect(a))
-	    {
-	      a->debug("...OK\n");
-	      a->methods = m;
-	      a->method = probe_sequence[i];
-	      break;
-	    }
-	  a->debug("...No.\n");
-	}
+      for (i = 0; probe_sequence[i] >= 0; i++)
+      {
+        struct pci_methods *m = pci_methods[probe_sequence[i]];
+        if (!m)
+          continue;
+        a->debug("Trying method %s...", m->name);
+        if (m->detect(a))
+        {
+          a->debug("...OK\n");
+          a->methods = m;
+          a->method = probe_sequence[i];
+          break;
+        }
+        a->debug("...No.\n");
+      }
       if (!a->methods)
-	a->error("Cannot find any working access method.");
+        a->error("Cannot find any working access method.");
     }
-  a->debug("Decided to use %s\n", a->methods->name);
-  a->methods->init(a);
+    a->debug("Decided to use %s\n", a->methods->name);
+    a->methods->init(a);
 }
 
 STATIC_ALIAS(void pci_init(struct pci_access *a), pci_init_v35(a));

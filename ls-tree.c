@@ -75,68 +75,68 @@ grow_tree(void)
   /* Build list of bridges */
 
   last_br = &host_bridge.chain;
-  for (d=first_dev; d; d=d->next)
+  for (d = first_dev; d; d = d->next)
+  {
+    struct pci_dev *dd = d->dev;
+    word class = dd->device_class;
+    byte ht = get_conf_byte(d, PCI_HEADER_TYPE) & 0x7f;
+    if ((class >> 8) == PCI_BASE_CLASS_BRIDGE &&
+        (ht == PCI_HEADER_TYPE_BRIDGE || ht == PCI_HEADER_TYPE_CARDBUS))
     {
-      struct pci_dev *dd = d->dev;
-      word class = dd->device_class;
-      byte ht = get_conf_byte(d, PCI_HEADER_TYPE) & 0x7f;
-      if ((class >> 8) == PCI_BASE_CLASS_BRIDGE &&
-	  (ht == PCI_HEADER_TYPE_BRIDGE || ht == PCI_HEADER_TYPE_CARDBUS))
-	{
-	  b = xmalloc(sizeof(struct bridge));
-	  b->domain = dd->domain;
-	  if (ht == PCI_HEADER_TYPE_BRIDGE)
-	    {
-	      b->primary = get_conf_byte(d, PCI_PRIMARY_BUS);
-	      b->secondary = get_conf_byte(d, PCI_SECONDARY_BUS);
-	      b->subordinate = get_conf_byte(d, PCI_SUBORDINATE_BUS);
-	    }
-	  else
-	    {
-	      b->primary = get_conf_byte(d, PCI_CB_PRIMARY_BUS);
-	      b->secondary = get_conf_byte(d, PCI_CB_CARD_BUS);
-	      b->subordinate = get_conf_byte(d, PCI_CB_SUBORDINATE_BUS);
-	    }
-	  *last_br = b;
-	  last_br = &b->chain;
-	  b->next = b->child = NULL;
-	  b->first_bus = NULL;
-	  b->br_dev = d;
-	  d->bridge = b;
-	  pacc->debug("Tree: bridge %04x:%02x:%02x.%d: %02x -> %02x-%02x\n",
-	    dd->domain, dd->bus, dd->dev, dd->func,
-	    b->primary, b->secondary, b->subordinate);
-	}
+      b = xmalloc(sizeof(struct bridge));
+      b->domain = dd->domain;
+      if (ht == PCI_HEADER_TYPE_BRIDGE)
+      {
+        b->primary = get_conf_byte(d, PCI_PRIMARY_BUS);
+        b->secondary = get_conf_byte(d, PCI_SECONDARY_BUS);
+        b->subordinate = get_conf_byte(d, PCI_SUBORDINATE_BUS);
+      }
+      else
+      {
+        b->primary = get_conf_byte(d, PCI_CB_PRIMARY_BUS);
+        b->secondary = get_conf_byte(d, PCI_CB_CARD_BUS);
+        b->subordinate = get_conf_byte(d, PCI_CB_SUBORDINATE_BUS);
+      }
+      *last_br = b;
+      last_br = &b->chain;
+      b->next = b->child = NULL;
+      b->first_bus = NULL;
+      b->br_dev = d;
+      d->bridge = b;
+      pacc->debug("Tree: bridge %04x:%02x:%02x.%d: %02x -> %02x-%02x\n",
+                  dd->domain, dd->bus, dd->dev, dd->func,
+                  b->primary, b->secondary, b->subordinate);
     }
+  }
   *last_br = NULL;
 
   /* Create a bridge tree */
 
-  for (b=&host_bridge; b; b=b->chain)
+  for (b = &host_bridge; b; b = b->chain)
+  {
+    struct bridge *c, *best;
+    best = NULL;
+    for (c = &host_bridge; c; c = c->chain)
+      if (c != b && (c == &host_bridge || b->domain == c->domain) &&
+          b->primary >= c->secondary && b->primary <= c->subordinate &&
+          (!best || best->subordinate - best->primary > c->subordinate - c->primary))
+        best = c;
+    if (best)
     {
-      struct bridge *c, *best;
-      best = NULL;
-      for (c=&host_bridge; c; c=c->chain)
-	if (c != b && (c == &host_bridge || b->domain == c->domain) &&
-	    b->primary >= c->secondary && b->primary <= c->subordinate &&
-	    (!best || best->subordinate - best->primary > c->subordinate - c->primary))
-	  best = c;
-      if (best)
-	{
-	  b->next = best->child;
-	  best->child = b;
-	}
+      b->next = best->child;
+      best->child = b;
     }
+  }
 
   /* Insert secondary bus for each bridge */
 
-  for (b=&host_bridge; b; b=b->chain)
+  for (b = &host_bridge; b; b = b->chain)
     if (!find_bus(b, b->domain, b->secondary))
       new_bus(b, b->domain, b->secondary);
 
   /* Create bus structs and link devices */
 
-  for (d=first_dev; d; d=d->next)
+  for (d = first_dev; d; d = d->next)
     insert_dev(d, &host_bridge);
 }
 

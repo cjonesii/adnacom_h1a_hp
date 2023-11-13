@@ -65,6 +65,7 @@ struct device *first_dev;
 struct adna_device *first_adna = NULL;
 static int seen_errors;
 static int need_topology;
+static bool is_initialized = false;
 
 struct adnatool_pci_device {
         u16 vid;
@@ -91,6 +92,7 @@ struct adna_device {
   bool bIsD3;         /* Power state */
   int devnum;         /* Assigned NumDevice */
   struct device *parent, *usbhub; /* The parent and the hub device */
+  int dl_down_cnt;
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
@@ -369,6 +371,14 @@ void eep_init(struct device *d)
     fflush(stdout);
 }
 
+bool pci_dl_active(struct pci_dev *pdev)
+{
+  struct pci_cap *cap;
+  cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+  int linksta = pci_read_word(pdev, cap->addr + PCI_EXP_LNKSTA);
+  return (linksta & PCI_EXP_LNKSTA_DL_ACT) == PCI_EXP_LNKSTA_DL_ACT;
+}
+
 int pci_get_devtype(struct pci_dev *pdev)
 {
   struct pci_cap *cap;
@@ -384,18 +394,18 @@ bool pci_is_upstream(struct pci_dev *pdev)
 
 bool pcidev_is_adnacom(struct pci_dev *p)
 {
-        struct adnatool_pci_device *entry;
-        pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_BASES | PCI_FILL_CLASS);
-        for (entry = adnatool_pci_devtbl; entry->vid != 0; entry++) {
-                if (p->vendor_id != entry->vid)
-                        continue;
-                if (p->device_id != entry->did)
-                        continue;
-                if (p->device_class != entry->cls_rev)
-                        continue;
-                return true;
-        }
-        return false;
+  struct adnatool_pci_device *entry;
+  pci_fill_info(p, PCI_FILL_IDENT | PCI_FILL_BASES | PCI_FILL_CLASS);
+  for (entry = adnatool_pci_devtbl; entry->vid != 0; entry++) {
+    if (p->vendor_id != entry->vid)
+      continue;
+    if (p->device_id != entry->did)
+      continue;
+    if (p->device_class != entry->cls_rev)
+      continue;
+    return true;
+  }
+  return false;
 }
 
 int config_fetch(struct device *d, unsigned int pos, unsigned int len)
@@ -531,11 +541,14 @@ static int count_downstream(void)
   struct device *d;
   int i=0;
   for (d=first_dev; d; d=d->next) {
-    if (!pci_is_upstream(d->dev))
-      d->NumDevice = ++i;
-    else
-      d->NumDevice = 0;
+    if (pci_filter_match(&filter, d->dev)) {
+      if (!pci_is_upstream(d->dev))
+        d->NumDevice = ++i;
+      else
+        d->NumDevice = 0;
+    }
   }
+
   return i;
 }
 
@@ -1104,6 +1117,7 @@ static int save_to_adna_list(void)
       a->dev = d->dev->dev;
       a->func = d->dev->func;
       a->bIsD3 = false;
+      a->dl_down_cnt = 0;
       if (d->parent_bus->parent_bridge->br_dev != NULL)
         a->parent = d->parent_bus->parent_bridge->br_dev;
       if (d->bridge->first_bus->first_dev != NULL)
@@ -1136,17 +1150,17 @@ static int adna_pci_process(void)
   adna_pacc_init();
   scan_devices();
   sort_them();
-
-  NumDevices = count_downstream();
-  if (NumDevices == 0) {
-    printf("No Adnacom device detected.\n");
-    return ENODEV;
-  }
-
   grow_tree();
-  save_to_adna_list();
-  show();
 
+  if (is_initialized == false) {
+    NumDevices = count_downstream();
+    if (NumDevices == 0) {
+      printf("No Adnacom device detected.\n");
+      return ENODEV;
+    }
+    save_to_adna_list();
+    show();
+  }
   adna_pacc_cleanup();
 
   return 0;
@@ -1209,19 +1223,36 @@ static void timer_callback(int signum)
 {
   (void)(signum);
   struct adna_device *a;
+  struct device *d;
+  int status;
   first_adna = NULL;
   first_dev = NULL;
 
-  adna_pacc_init();
-  scan_devices();
-  sort_them();
-  grow_tree();
+  status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
+  if (status != EXIT_SUCCESS)
+    exit(status);
 
-#if 0
-  for (a = first_adna; a; a=a->next) {
+#if 1
+  for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
+    if (a->bIsD3) { // Do not process no HP device
+      printf("%x:%x.%d is not Hotplug capable. Skipping device.\n", a->bus, a->dev, a->func);
+      continue;
+    }
+    // check the link up
+    for (d = first_dev; d; d = d->next) {
+      if ((a->bus) == (d->dev->bus) &&
+          (a->dev) == (d->dev->dev) &&
+          (a->func) == (d->dev->func)) {
+        if (!pci_dl_active(d->dev)) {
+          a->dl_down_cnt++;
+          printf("Link for this downstream has been down for %d\n", a->dl_down_cnt);
+        }
+      }
+    }
 
   }
 
+#else 
   uint32_t read_buffer;
   uint32_t hotplug_buffer;
   int linkStat = 0xff;
@@ -1325,6 +1356,8 @@ int main(int argc, char **argv)
   status = adna_pci_process();
   if (status != EXIT_SUCCESS)
     exit(1);
+  else
+    is_initialized = true;
 
   while (sleep(remaining) != 0) {
     if (errno == EINTR) {
