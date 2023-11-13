@@ -1122,6 +1122,7 @@ static int save_to_adna_list(void)
   struct device *d;
   struct adna_device *a;
   struct pci_filter *f;
+  char bdf_str[17];
 
   for (d=first_dev; d; d=d->next) {
     if (d->NumDevice) {
@@ -1129,10 +1130,9 @@ static int save_to_adna_list(void)
       memset(a, 0, sizeof(*a));
       a->devnum = d->NumDevice;
       f = xmalloc(sizeof(struct pci_filter));
-      f->domain = d->dev->domain;
-      f->bus = d->dev->bus;
-      f->slot = d->dev->dev;
-      f->func = d->dev->func;
+      snprintf(bdf_str, sizeof(bdf_str), "%04x:%02x:%02x.%d",
+               d->dev->domain, d->dev->bus, d->dev->dev, d->dev->func);
+      pci_filter_parse_slot(f, bdf_str);
       a->bdf = f;
       a->bIsD3 = false;
       a->dl_down_cnt = 0;
