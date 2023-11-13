@@ -1432,7 +1432,6 @@ static void timer_callback(int signum)
           sleep(1);
           settimer100ms();
         } else if (!is_linkup && !is_hubup) {
-          stoptimer();
           if ((20 == a->dl_down_cnt) || 
               (20 == a->hub_down_cnt)) {
             a->dl_down_cnt = 0;
@@ -1441,11 +1440,10 @@ static void timer_callback(int signum)
             for (int noop = 0; noop < 100; noop++) { }
             enable_port(d);
           }
-          settimer100ms();
         } else {
           ;//
         }
-
+        show_verbose(d);
       }
     }
   }
