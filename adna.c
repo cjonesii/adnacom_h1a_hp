@@ -1263,7 +1263,6 @@ static void timer_callback(int signum)
         }
       }
     }
-  adna_pacc_cleanup();
   }
 
 #else 
@@ -1342,6 +1341,7 @@ static void timer_callback(int signum)
   fflush(stdout);
 #endif
   printf("Oleh!\n");
+  adna_pacc_cleanup();
 }
 
 /* Main */
