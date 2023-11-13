@@ -1379,15 +1379,13 @@ static void timer_callback(int signum)
 
     for (d = first_dev; d; d = d->next) {
       if (pci_filter_match(a->bdf, d->dev)) {
-        is_linkup = pci_dl_active(d->dev);
-        is_hubup = pci_is_hub_alive(d);
 
-        if (!is_linkup) {
+        if (!pci_dl_active(d->dev)) {
           a->dl_down_cnt++;
           printf("%s link has been down for %d\n", bdf, a->dl_down_cnt);
         }
 
-        if (!is_hubup) {
+        if (!pci_is_hub_alive(d)) {
           a->hub_down_cnt++;
           printf("%s partner usb hub has been down for %d\n", bdf, a->hub_down_cnt);
         }
