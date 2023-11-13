@@ -400,7 +400,11 @@ void eep_init(struct device *d)
 /*! @brief Disables H1A downstream port in PCIe switch register */
 static uint32_t pcimem_read_linkup(struct device *d)
 {
-  uint32_t readbuffer = pcimem(d->dev, H1A_DS_LINK_OFFSET, 0);
+  struct device *a;
+  if (NULL != d->parent_bus->parent_bridge->br_dev)
+    a = d->parent_bus->parent_bridge->br_dev;
+
+  uint32_t readbuffer = pcimem(a->dev, H1A_DS_LINK_OFFSET, 0);
   return readbuffer;
 }
 
