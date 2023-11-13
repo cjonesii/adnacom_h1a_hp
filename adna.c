@@ -1133,6 +1133,7 @@ static int save_to_adna_list(void)
       snprintf(bdf_str, sizeof(bdf_str), "%04x:%02x:%02x.%d",
                d->dev->domain, d->dev->bus, d->dev->dev, d->dev->func);
       pci_filter_parse_slot(f, bdf_str);
+      pci_filter_parse_id(f, bdf_str);
       a->bdf = f;
       a->bIsD3 = false;
       a->dl_down_cnt = 0;
