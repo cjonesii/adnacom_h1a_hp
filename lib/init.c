@@ -255,11 +255,10 @@ pci_cleanup(struct pci_access *a)
 {
   struct pci_dev *d, *e;
 
-  for (d=a->devices; d; d=e)
-    {
-      e = d->next;
-      pci_free_dev(d);
-    }
+  for (d=a->devices; d; d=e) {
+    e = d->next;
+    pci_free_dev(d);
+  }
   if (a->methods)
     a->methods->cleanup(a);
   pci_free_name_list(a);

@@ -1218,6 +1218,7 @@ static int delete_adna_list(void)
   struct adna_device *a, *b;
   for (a=first_adna;a;a=b) {
     b=a->next;
+    free(a->bdf);
     free(a);
   }
   return 0;
@@ -1237,6 +1238,7 @@ static int save_to_adna_list(void)
       memset(a, 0, sizeof(*a));
       a->devnum = d->NumDevice;
       f = xmalloc(sizeof(struct pci_filter));
+      memset(f, 0, sizeof(*f));
       snprintf(bdf_str, sizeof(bdf_str), "%04x:%02x:%02x.%d",
                d->dev->domain, d->dev->bus, d->dev->dev, d->dev->func);
       snprintf(mfg_str, sizeof(mfg_str), "%04x:%04x:%04x",
@@ -1256,6 +1258,26 @@ static int save_to_adna_list(void)
       a->next = first_adna;
       first_adna = a;
     }
+  }
+  return 0;
+}
+
+static int refresh_device_cache(struct pci_dev *pdev)
+{
+  /* let's refresh the pcidev details */
+  if (!pdev->cache) {
+    u8 *cache;
+    if ((cache = calloc(1, 256)) == NULL) {
+      fprintf(stderr, "error allocating pci device config cache!\n");
+      exit(-1);
+    }
+    pci_setup_cache(pdev, cache, 256);
+  }
+
+  /* refresh the config block */
+  if (!pci_read_block(pdev, 0, pdev->cache, 256)) {
+    fprintf(stderr, "error reading pci device config!\n");
+    return -1;
   }
   return 0;
 }
@@ -1405,6 +1427,7 @@ static void timer_callback(int signum)
 
     for (d = first_dev; d; d = d->next) {
       if (pci_filter_match(a->bdf, d->dev)) {
+        refresh_device_cache(d->dev);
         is_linkup = pci_dl_active(d->dev);
         is_hubup = pci_is_hub_alive(d);
 
