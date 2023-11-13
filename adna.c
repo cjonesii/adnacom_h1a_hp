@@ -1102,7 +1102,7 @@ static void show(void)
 
   for (d=first_dev; d; d=d->next)
     if (pci_filter_match(&filter, d->dev))
-      if (!pci_is_upstream(d->dev))
+      if (pci_is_downstream(d->dev))
         show_verbose(d);
 }
 
@@ -1249,7 +1249,7 @@ static void timer_callback(int signum)
 #if 1
   for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
     snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->bus, a->dev, a->func);
-    if (a->bIsD3) { // Do not process no HP device
+    if (a->bIsD3) { // Do not process non hotplug device
       printf("%s is not Hotplug capable. Skipping device.\n", bdf);
       continue;
     }
