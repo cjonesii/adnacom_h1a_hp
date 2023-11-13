@@ -101,6 +101,7 @@ bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
 bool pci_dl_active(struct pci_dev *pdev);
 bool pci_is_hub_alive(struct device *d);
+bool pci_is_downstream(struct pci_dev *pdev);
 
 void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer);
 void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
@@ -1266,7 +1267,7 @@ static void timer_callback(int signum)
         // check the usb hub
         if (!pci_is_hub_alive(d)) {
           a->hub_down_cnt++;
-          printf("%s partner hub has been down for %d\n", bdf, a->hub_down_cnt);
+          printf("%s partner usb hub has been down for %d\n", bdf, a->hub_down_cnt);
         }
       }
     }
