@@ -1247,16 +1247,17 @@ static void timer_callback(int signum)
       printf("%s is not Hotplug capable. Skipping device.\n", bdf);
       continue;
     }
-    // check the link up
+
     for (d = first_dev; d; d = d->next) {
       if ((a->bus) == (d->dev->bus) &&
           (a->dev) == (d->dev->dev) &&
           (a->func) == (d->dev->func)) {
+        // check the link up
         if (!pci_dl_active(d->dev)) {
           a->dl_down_cnt++;
           printf("%s link has been down for %d\n", bdf, a->dl_down_cnt);
         }
-
+        // check the usb hub
         if (!pci_is_hub_alive(d)) {
           a->hub_down_cnt++;
           printf("%s partner hub has been down for %d\n", bdf, a->hub_down_cnt);
@@ -1341,7 +1342,7 @@ static void timer_callback(int signum)
   fflush(stdout);
 #endif
   printf("Oleh!\n");
-  adna_pacc_cleanup();
+  adna_pacc_cleanup(); // why nagdodouble clean up error?
 }
 
 /* Main */
@@ -1364,14 +1365,14 @@ int main(int argc, char **argv)
     return 0;
   }
 
-  setitimer(ITIMER_REAL, &new_timer, &old_timer);
-  signal(SIGALRM, timer_callback);
-
   status = adna_pci_process();
   if (status != EXIT_SUCCESS)
     exit(1);
   else
     is_initialized = true;
+
+  setitimer(ITIMER_REAL, &new_timer, &old_timer);
+  signal(SIGALRM, timer_callback);
 
   while (sleep(remaining) != 0) {
     if (errno == EINTR) {
