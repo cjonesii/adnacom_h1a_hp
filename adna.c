@@ -1362,7 +1362,7 @@ static void timer_callback(int signum)
   char bdf[10];
   static bool is_linkup = false;
   static bool is_hubup = false;
-  static int link_state;
+  static bool int link_state;
   first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
@@ -1379,13 +1379,15 @@ static void timer_callback(int signum)
 
     for (d = first_dev; d; d = d->next) {
       if (pci_filter_match(a->bdf, d->dev)) {
+        is_linkup = pci_dl_active(d->dev);
+        is_hubup = pci_is_hub_alive(d);
 
-        if (!pci_dl_active(d->dev)) {
+        if (!is_linkup) {
           a->dl_down_cnt++;
           printf("%s link has been down for %d\n", bdf, a->dl_down_cnt);
         }
 
-        if (!pci_is_hub_alive(d)) {
+        if (!is_hubup) {
           a->hub_down_cnt++;
           printf("%s partner usb hub has been down for %d\n", bdf, a->hub_down_cnt);
         }
@@ -1396,7 +1398,6 @@ static void timer_callback(int signum)
           stoptimer();
           rescan_pci();
           sleep(1);
-          a->link_bad_cnt++;
           settimer100ms();
         } else if (!is_linkup && is_hubup) {
           stoptimer();
@@ -1404,8 +1405,13 @@ static void timer_callback(int signum)
           rescan_pci();
           sleep(1);
           settimer100ms();
+        } else if (!is_linkup && !is_hubup) {
+          stoptimer();
+          rescan_pci();
+          sleep(1);
+          settimer100ms();
         } else {
-          // 
+          ;//
         }
 
       }
