@@ -412,6 +412,7 @@ static void enable_port(struct device *d)
   struct device *a;
   if (NULL != d->parent_bus->parent_bridge->br_dev)
     a = d->parent_bus->parent_bridge->br_dev;
+
   int ptControl = pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl &= ~1;
   pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, ptControl);
@@ -1431,6 +1432,7 @@ static void timer_callback(int signum)
           sleep(1);
           settimer100ms();
         } else if (!is_linkup && !is_hubup) {
+          stoptimer();
           if ((20 == a->dl_down_cnt) || 
               (20 == a->hub_down_cnt)) {
             a->dl_down_cnt = 0;
@@ -1439,6 +1441,7 @@ static void timer_callback(int signum)
             for (int noop = 0; noop < 100; noop++) { }
             enable_port(d);
           }
+          settimer100ms();
         } else {
           ;//
         }
