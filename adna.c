@@ -92,13 +92,14 @@ struct adna_device {
   bool bIsD3;         /* Power state */
   int devnum;         /* Assigned NumDevice */
   struct device *parent, *usbhub; /* The parent and the hub device */
-  int dl_down_cnt;
+  int dl_down_cnt, hub_down_cnt;
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
 bool pci_is_upstream(struct pci_dev *pdev);
 bool pcidev_is_adnacom(struct pci_dev *p);
 bool pci_dl_active(struct pci_dev *pdev);
+bool pci_is_hub_alive(struct device *d);
 
 void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer);
 void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
@@ -370,6 +371,11 @@ void eep_init(struct device *d)
 
     printf("EEPROM was initialized. Please restart your system for changes to take effect.\n");
     fflush(stdout);
+}
+
+bool pci_is_hub_alive(struct device *d)
+{
+  return (NULL != d->bridge->first_bus->first_dev);
 }
 
 bool pci_dl_active(struct pci_dev *pdev)
@@ -1119,6 +1125,7 @@ static int save_to_adna_list(void)
       a->func = d->dev->func;
       a->bIsD3 = false;
       a->dl_down_cnt = 0;
+      a->hub_down_cnt = 0;
       if (d->parent_bus->parent_bridge->br_dev != NULL)
         a->parent = d->parent_bus->parent_bridge->br_dev;
       if (d->bridge->first_bus->first_dev != NULL)
@@ -1226,8 +1233,8 @@ static void timer_callback(int signum)
   struct adna_device *a;
   struct device *d;
   int status;
-  // first_adna = NULL;
   first_dev = NULL;
+  char bdf[10];
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
   if (status != EXIT_SUCCESS)
@@ -1235,8 +1242,9 @@ static void timer_callback(int signum)
 
 #if 1
   for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
+    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->bus, a->dev, a->func);
     if (a->bIsD3) { // Do not process no HP device
-      printf("%x:%x.%d is not Hotplug capable. Skipping device.\n", a->bus, a->dev, a->func);
+      printf("%s is not Hotplug capable. Skipping device.\n", bdf);
       continue;
     }
     // check the link up
@@ -1246,7 +1254,12 @@ static void timer_callback(int signum)
           (a->func) == (d->dev->func)) {
         if (!pci_dl_active(d->dev)) {
           a->dl_down_cnt++;
-          printf("Link for this downstream has been down for %d\n", a->dl_down_cnt);
+          printf("%s link has been down for %d\n", bdf, a->dl_down_cnt);
+        }
+
+        if (!pci_is_hub_alive(d)) {
+          a->hub_down_cnt++;
+          printf("%s partner hub has been down for %d\n", bdf, a->hub_down_cnt);
         }
       }
     }
