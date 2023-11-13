@@ -1360,8 +1360,9 @@ static void timer_callback(int signum)
   struct device *d;
   int status;
   char bdf[10];
-  bool is_linkup = false, is_hubup = false;
-  int link_state;
+  static bool is_linkup = false;
+  static bool is_hubup = false;
+  static int link_state;
   first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
