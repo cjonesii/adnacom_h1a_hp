@@ -94,10 +94,9 @@ struct eep_options {
 
 struct adna_device {
   struct adna_device *next;
-  struct pci_filter *bdf;
+  struct pci_filter *this, *parent, *hub;
   bool bIsD3, bLinkCheck; /* Power state and Link Status */
   int devnum;         /* Assigned NumDevice */
-  struct device *parent, *usbhub; /* The parent and the hub device */
   int dl_down_cnt, hub_down_cnt, link_bad_cnt; /* Error counters */
 };
 
@@ -119,31 +118,31 @@ static void stoptimer(void);
 static void settimer100ms(void);
 static void timer_callback(int signum);
 
-static void pci_get_res0(struct pci_dev *pdev, char *path, size_t pathlen)
+static void pci_get_res0(struct pci_filter *f, char *path, size_t pathlen)
 {
   snprintf(path, 
           pathlen,
           "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
-          pdev->domain,
-          pdev->bus,
-          pdev->dev,
-          pdev->func);
+          f->domain,
+          f->bus,
+          f->slot,
+          f->func);
   return;
 }
 
-static void pci_get_remove(struct pci_dev *pdev, char *path, size_t pathlen)
+static void pci_get_remove(struct pci_filter *f, char *path, size_t pathlen)
 {
   snprintf(path, 
           pathlen,
           "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
-          pdev->domain,
-          pdev->bus,
-          pdev->dev,
-          pdev->func);
+          f->domain,
+          f->bus,
+          f->slot,
+          f->func);
   return;
 }
 
-static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
+static uint32_t pcimem(struct pci_filter *f, uint32_t reg, uint32_t data)
 {
   int fd;
   void *map_base, *virt_addr;
@@ -157,7 +156,7 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
   int map_size = 4096UL;
 
   char filename[256] = "\0";
-  pci_get_res0(p, filename, sizeof(filename));
+  pci_get_res0(f, filename, sizeof(filename));
   target = (off_t)reg;
 
   switch (access_type)
@@ -273,7 +272,7 @@ static uint32_t pcimem(struct pci_dev *p, uint32_t reg, uint32_t data)
   close(fd);
   return (data ? 0 : (uint32_t)read_result);
 }
-
+#if 0
 static void check_for_ready_or_done(struct device *d)
 {
     volatile uint32_t eepCmdStatus = EEP_CMD_STAT_MAX;
@@ -396,40 +395,28 @@ void eep_init(struct device *d)
     printf("EEPROM was initialized. Please restart your system for changes to take effect.\n");
     fflush(stdout);
 }
-
+#endif
 /*! @brief Disables H1A downstream port in PCIe switch register */
-static uint32_t pcimem_read_linkup(struct device *d)
+static uint32_t pcimem_read_linkup(struct adna_device *a)
 {
-  struct device *a;
-  if (NULL != d->parent_bus->parent_bridge->br_dev)
-    a = d->parent_bus->parent_bridge->br_dev;
-
-  uint32_t readbuffer = pcimem(a->dev, H1A_DS_LINK_OFFSET, 0);
+  uint32_t readbuffer = pcimem(a->parent, H1A_DS_LINK_OFFSET, 0);
   return readbuffer;
 }
 
 /*! @brief Disables H1A downstream port in PCIe switch register */
-static void disable_port(struct device *d)
+static void disable_port(struct adna_device *a)
 {
-  struct device *a;
-  if (NULL != d->parent_bus->parent_bridge->br_dev)
-    a = d->parent_bus->parent_bridge->br_dev;
-
-  int ptControl = pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, 0);
+  int ptControl = pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl |= 1;
-  pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, ptControl);
+  pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 
 /*! @brief Enables H1A downstream port in PCIe switch register */
-static void enable_port(struct device *d)
+static void enable_port(struct adna_device *a)
 {
-  struct device *a;
-  if (NULL != d->parent_bus->parent_bridge->br_dev)
-    a = d->parent_bus->parent_bridge->br_dev;
-
-  int ptControl = pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, 0);
+  int ptControl = pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl &= ~1;
-  pcimem(a->dev, H1A_DISABLE_PORT1_OFFSET, ptControl);
+  pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 
 static char *link_compare(int sta, int cap)
@@ -521,11 +508,11 @@ bool pcidev_is_adnacom(struct pci_dev *p)
 }
 
 /*! @brief Removes the H1A downstream port */
-static void remove_downstream(struct pci_dev *p)
+static void remove_downstream(struct adna_device *a)
 {
   char filename[256] = "\0";
   int dsfd, res;
-  pci_get_remove(p, filename, sizeof(filename));
+  pci_get_remove(a->this, filename, sizeof(filename));
   if((dsfd = open(filename, O_WRONLY )) == -1) PRINT_ERROR;
   printf("Removing %s H1A downstream port from system\n", filename);
   if((res = write( dsfd, "1", 1 )) == -1) PRINT_ERROR;
@@ -1232,7 +1219,9 @@ static int delete_adna_list(void)
   struct adna_device *a, *b;
   for (a=first_adna;a;a=b) {
     b=a->next;
-    free(a->bdf);
+    free(a->this);
+    free(a->parent);
+    free(a->hub);
     free(a);
   }
   return 0;
@@ -1240,9 +1229,9 @@ static int delete_adna_list(void)
 
 static int save_to_adna_list(void)
 {
-  struct device *d;
+  struct device *d, *parent, *hub;
   struct adna_device *a;
-  struct pci_filter *f;
+  struct pci_filter *f, *p, *u;
   char bdf_str[17];
   char mfg_str[17];
 
@@ -1259,16 +1248,35 @@ static int save_to_adna_list(void)
                d->dev->vendor_id, d->dev->device_id, d->dev->device_class);
       pci_filter_parse_slot(f, bdf_str);
       pci_filter_parse_id(f, mfg_str);
-      a->bdf = f;
+      a->this = f;
       a->bIsD3 = false;
       a->bLinkCheck = false;
       a->dl_down_cnt = 0;
       a->hub_down_cnt = 0;
       a->link_bad_cnt = 0;
-      if (d->parent_bus->parent_bridge->br_dev != NULL)
-        a->parent = d->parent_bus->parent_bridge->br_dev;
-      if (d->bridge->first_bus->first_dev != NULL)
-        a->usbhub = d->bridge->first_bus->first_dev;
+      if (d->parent_bus->parent_bridge->br_dev != NULL) {
+        parent = d->parent_bus->parent_bridge->br_dev;
+        p = xmalloc(sizeof(struct pci_filter));
+        snprintf(bdf_str, sizeof(bdf_str), "%04x:%02x:%02x.%d",
+               parent->dev->domain, parent->dev->bus, parent->dev->dev, parent->dev->func);
+        snprintf(mfg_str, sizeof(mfg_str), "%04x:%04x:%04x",
+               parent->dev->vendor_id, parent->dev->device_id, parent->dev->device_class);
+        pci_filter_parse_slot(p, bdf_str);
+        pci_filter_parse_id(p, mfg_str);
+        a->parent = p;
+      }
+      if (d->bridge->first_bus->first_dev != NULL) {
+        u = xmalloc(sizeof(struct pci_filter));
+        hub = d->bridge->first_bus->first_dev;
+        snprintf(bdf_str, sizeof(bdf_str), "%04x:%02x:%02x.%d",
+               hub->dev->domain, hub->dev->bus, hub->dev->dev, hub->dev->func);
+        snprintf(mfg_str, sizeof(mfg_str), "%04x:%04x:%04x",
+               hub->dev->vendor_id, hub->dev->device_id, hub->dev->device_class);
+        pci_filter_parse_slot(u, bdf_str);
+        pci_filter_parse_id(u, mfg_str);
+        a->hub = u;
+      }
+
       a->next = first_adna;
       first_adna = a;
     }
@@ -1370,9 +1378,9 @@ static int adna_d3_to_d0(void)
       snprintf(argv[2], 
                14,
                "%02x:%02x.%d",
-               a->bdf->bus,
-               a->bdf->slot,
-               a->bdf->func);
+               a->this->bus,
+               a->this->slot,
+               a->this->func);
       status = setpci(4, argv);
       if (EXIT_FAILURE == status)
         return status;
@@ -1418,6 +1426,7 @@ static void stoptimer(void)
 static void timer_callback(int signum)
 {
   (void)(signum);
+#if 0
   struct adna_device *a;
   struct device *d;
   int status;
@@ -1433,7 +1442,6 @@ static void timer_callback(int signum)
   if (status != EXIT_SUCCESS)
     exit(status);
 
-#if 1
   for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
     snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->bdf->bus, a->bdf->slot, a->bdf->func);
     if (a->bIsD3) { // Do not process non hotplug device
@@ -1448,7 +1456,7 @@ static void timer_callback(int signum)
         is_hubup = pci_is_hub_alive(d);
         readbuffer = pcimem_read_linkup(d);
         linkstat = (readbuffer >> 29) & 1;
-        printf("H1A DS Port %s Link is %s", bdf, (linkstat == 1) ? "Up" : "Down");
+        printf("H1A DS Port %s Link is %s\n", bdf, (linkstat == 1) ? "Up" : "Down");
 
         if (!is_linkup) {
           a->dl_down_cnt++;
@@ -1489,84 +1497,69 @@ static void timer_callback(int signum)
       }
     }
   }
-
-#else 
+  adna_pacc_cleanup();
+#else
+  struct adna_device *a;
   uint32_t read_buffer;
   uint32_t hotplug_buffer;
   int linkStat = 0xff;
   int linkQuality = LINK_QUALITY_MAX;
-  static int link_bad_count[H1A_PORT_CNT] = {0};
-  static int timeout[H1A_PORT_CNT] = {0};
-  static int ep_down_count[H1A_PORT_CNT] = {0};
-  int pri_bus = adnacom_get_runtime_value(H1A, PRI_BUS);
+  char bdf[10];
 
-  for (int i=0; i<H1A_PORT_CNT; i++) {
-      if (pri_bus == g_h1a_dev_struct[i].pri_bus)
-          continue;
-      if (    (0 == g_h1a_dev_struct[i].domain)
-            && (0 == g_h1a_dev_struct[i].pri_bus)
-            && (0 == g_h1a_dev_struct[i].dev)
-            && (0 == g_h1a_dev_struct[i].func))
-          continue;
-      hotplug_buffer = pcimem(REG_READ, g_h1a_dev_struct[i].hotplug, 0, H1A);
-      if ((INVALID_READ == hotplug_buffer) || (0x3 != ((hotplug_buffer >> 5) & 0x3))) {
-          adnacom_stoptimer();
-          printf("\n\nError: Please update your H1A EEPROM to enable Hotplug capability\n");
-          exit(1);
-      }
-      read_buffer = pcimem(REG_READ, g_h1a_dev_struct[i].linkup, 0, H1A);
-      if (INVALID_READ == read_buffer) {
-          PRINTF("Invalid link up value, resetting H1A upstream port...\n");
-          adnacom_stoptimer();
-          reset_h1a_root_port();
-          adnacom_settimer100ms();
-          continue;
-      }
-      linkStat = (read_buffer >> BIT29) & 1;
-      PRINTF("H1A DS Port %d Link is %s", (int)g_h1a_dev_struct[i].dev,
-              linkStat == H1A_LINK_IS_UP ? "Up" : "Down");
-      if ((H1A_LINK_IS_UP == linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
-          PRINTF(", was Down previously\n");
-          adnacom_stoptimer();
-          linkQuality = h1a_link_up_routine(i);
-          if ((IDEAL != linkQuality) || (WIDTH_DEGRADED != linkQuality)) {
-              link_bad_count[i]++;
-          }
+  for (a = first_adna; a; a=a->next) {
+    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->this->bus, a->this->slot, a->this->func);
+    if (a->bIsD3) { // Do not process non hotplug device
+      printf("%s is not Hotplug capable. Skipping device.\n", bdf);
+      continue;
+    }
 
-          if (EP_PRESENT != g_h1a_dev_struct[i].present) {
-              ep_down_count[i]++;
-          }
+    read_buffer = pcimem_read_linkup(a);
+    linkStat = (read_buffer >> 29) & 1;
+    printf("H1A DS Port %s Link is %s", bdf, linkStat == 1 ? "Up" : "Down");
+#if 0
+      if ((1 == linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
+        PRINTF(", was Down previously\n");
+        adnacom_stoptimer();
+        linkQuality = h1a_link_up_routine(i);
+        if ((IDEAL != linkQuality) || (WIDTH_DEGRADED != linkQuality)) {
+          link_bad_count[i]++;
+        }
 
-          if ((LINK_RETRAIN_LIMIT <= link_bad_count[i]) || (LINK_RETRAIN_LIMIT <= ep_down_count[i])) {
-              link_bad_count[i] = 0;
-              ep_down_count[i] = 0;
-              reset_h1a_root_port();
-          }
+    if (EP_PRESENT != g_h1a_dev_struct[i].present) {
+    ep_down_count[i]++;
+    }
 
-          adnacom_settimer100ms();
-      } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT == g_h1a_dev_struct[i].present)) {
-          PRINTF(", was Up previously\n");
-          adnacom_stoptimer();
-          h1a_link_down_routine(i);
-          adnacom_settimer100ms();
-      } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
-          timeout[i]++;
-          if (LINK_DOWN_TIMEOUT <= timeout[i]) {
-              PRINTF(" and has been Down for 1s\n");
-              timeout[i] = 0;
-              disable_port_in_h1a(i);
-              for (int noop = 0; noop < 100; noop++) { }
-              enable_port_in_h1a(i);
-          }
-      } else {
-          // MISRA-C compliance
-      }
-      PRINTF("\n");
+    if ((LINK_RETRAIN_LIMIT <= link_bad_count[i]) || (LINK_RETRAIN_LIMIT <= ep_down_count[i])) {
+    link_bad_count[i] = 0;
+    ep_down_count[i] = 0;
+    reset_h1a_root_port();
+    }
+
+    adnacom_settimer100ms();
+    } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT == g_h1a_dev_struct[i].present)) {
+    PRINTF(", was Up previously\n");
+    adnacom_stoptimer();
+    h1a_link_down_routine(i);
+    adnacom_settimer100ms();
+    } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
+    timeout[i]++;
+    if (LINK_DOWN_TIMEOUT <= timeout[i]) {
+    PRINTF(" and has been Down for 1s\n");
+    timeout[i] = 0;
+    disable_port_in_h1a(i);
+    for (int noop = 0; noop < 100; noop++) { }
+    enable_port_in_h1a(i);
+    }
+    } else {
+    // MISRA-C compliance
+    }
+    PRINTF("\n");
+  }
+#endif
   }
   fflush(stdout);
 #endif
   printf("Oleh!\n");
-  adna_pacc_cleanup();
 }
 
 /* Main */
