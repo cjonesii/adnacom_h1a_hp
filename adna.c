@@ -89,7 +89,7 @@ struct eep_options {
 
 struct adna_device {
   struct adna_device *next;
-  u8 bus, dev, func;  /* Bus inside domain, device and function */
+  struct pci_filter *bdf;
   bool bIsD3;         /* Power state */
   int devnum;         /* Assigned NumDevice */
   struct device *parent, *usbhub; /* The parent and the hub device */
@@ -1121,15 +1121,19 @@ static int save_to_adna_list(void)
 {
   struct device *d;
   struct adna_device *a;
+  struct pci_filter *f;
 
   for (d=first_dev; d; d=d->next) {
     if (d->NumDevice) {
       a = xmalloc(sizeof(struct adna_device));
       memset(a, 0, sizeof(*a));
       a->devnum = d->NumDevice;
-      a->bus = d->dev->bus;
-      a->dev = d->dev->dev;
-      a->func = d->dev->func;
+      f = xmalloc(sizeof(struct pci_filter));
+      f->domain = d->dev->domain;
+      f->bus = d->dev->bus;
+      f->slot = d->dev->dev;
+      f->func = d->dev->func;
+      a->bdf = f;
       a->bIsD3 = false;
       a->dl_down_cnt = 0;
       a->hub_down_cnt = 0;
@@ -1218,9 +1222,9 @@ static int adna_d3_to_d0(void)
       snprintf(argv[2], 
                14,
                "%02x:%02x.%d",
-               a->bus,
-               a->dev,
-               a->func);
+               a->bdf->bus,
+               a->bdf->slot,
+               a->bdf->func);
       status = setpci(4, argv);
       if (EXIT_FAILURE == status)
         return status;
@@ -1249,16 +1253,14 @@ static void timer_callback(int signum)
 
 #if 1
   for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
-    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->bus, a->dev, a->func);
+    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->bdf->bus, a->bdf->slot, a->bdf->func);
     if (a->bIsD3) { // Do not process non hotplug device
       printf("%s is not Hotplug capable. Skipping device.\n", bdf);
       continue;
     }
 
     for (d = first_dev; d; d = d->next) {
-      if ((a->bus) == (d->dev->bus) &&
-          (a->dev) == (d->dev->dev) &&
-          (a->func) == (d->dev->func)) {
+      if (pci_filter_match(a->bdf, d->dev)) {
         // check the link up
         if (!pci_dl_active(d->dev)) {
           a->dl_down_cnt++;
@@ -1349,7 +1351,7 @@ static void timer_callback(int signum)
   fflush(stdout);
 #endif
   printf("Oleh!\n");
-  adna_pacc_cleanup(); // why nagdodouble clean up error?
+  adna_pacc_cleanup();
 }
 
 /* Main */
