@@ -40,6 +40,9 @@
 #define ADNATOOL_VERSION    "0.0.1"
 
 #define H1A_DISABLE_PORT1_OFFSET    (0x0234)
+#define H1A_DS_PORT1_OFFSET (0x1000)
+#define LINK_OFFSET         (0x0078)
+#define H1A_DS_LINK_OFFSET  ((H1A_DS_PORT1_OFFSET) + (LINK_OFFSET))
 
 #define foreach_pci_device(acc, p) \
   for ((p) = (acc)->devices; (p) != NULL; (p) = (p)->next)
@@ -392,6 +395,13 @@ void eep_init(struct device *d)
 
     printf("EEPROM was initialized. Please restart your system for changes to take effect.\n");
     fflush(stdout);
+}
+
+/*! @brief Disables H1A downstream port in PCIe switch register */
+static uint32_t pcimem_read_linkup(struct device *d)
+{
+  uint32_t readbuffer = pcimem(d->dev, H1A_DS_LINK_OFFSET, 0);
+  return readbuffer;
 }
 
 /*! @brief Disables H1A downstream port in PCIe switch register */
@@ -1411,6 +1421,8 @@ static void timer_callback(int signum)
   static bool is_linkup = false;
   static bool is_hubup = false;
   static int link_state;
+  uint32_t readbuffer;
+  uint16_t linkstat;
   first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
@@ -1430,6 +1442,9 @@ static void timer_callback(int signum)
         refresh_device_cache(d->dev);
         is_linkup = pci_dl_active(d->dev);
         is_hubup = pci_is_hub_alive(d);
+        readbuffer = pcimem_read_linkup(d);
+        linkstat = (readbuffer >> 29) & 1;
+        printf("H1A DS Port %s Link is %s", bdf, (linkstat == 1) ? "Up" : "Down");
 
         if (!is_linkup) {
           a->dl_down_cnt++;
