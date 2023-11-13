@@ -92,6 +92,14 @@ struct bus {
   struct device *first_dev, **last_dev;
 };
 
+enum link_state {
+  IDEAL,
+  SPEED_DEGRADED,
+  WIDTH_DEGRADED,
+  SPEED_N_WIDTH_DEGRADED,
+  LINK_QUALITY_MAX
+};
+
 /* ls-vpd.c */
 
 void cap_vpd(struct device *d);

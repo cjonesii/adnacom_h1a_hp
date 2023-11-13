@@ -90,10 +90,10 @@ struct eep_options {
 struct adna_device {
   struct adna_device *next;
   struct pci_filter *bdf;
-  bool bIsD3;         /* Power state */
+  bool bIsD3, bLinkCheck; /* Power state and Link Status */
   int devnum;         /* Assigned NumDevice */
   struct device *parent, *usbhub; /* The parent and the hub device */
-  int dl_down_cnt, hub_down_cnt;
+  int dl_down_cnt, hub_down_cnt, link_bad_cnt; /* Error counters */
 };
 
 int pci_get_devtype(struct pci_dev *pdev);
@@ -102,6 +102,7 @@ bool pcidev_is_adnacom(struct pci_dev *p);
 bool pci_dl_active(struct pci_dev *pdev);
 bool pci_is_hub_alive(struct device *d);
 bool pci_is_downstream(struct pci_dev *pdev);
+int pci_check_link_cap(struct pci_dev *pdev);
 
 void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer);
 void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
@@ -109,7 +110,23 @@ void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer);
 void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer);
 void eep_init(struct device *d);
 
+static void stoptimer(void);
+static void settimer100ms(void);
+static void timer_callback(int signum);
+
 static void pci_get_res0(struct pci_dev *pdev, char *path, size_t pathlen)
+{
+  snprintf(path, 
+          pathlen,
+          "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
+          pdev->domain,
+          pdev->bus,
+          pdev->dev,
+          pdev->func);
+  return;
+}
+
+static void pci_get_remove(struct pci_dev *pdev, char *path, size_t pathlen)
 {
   snprintf(path, 
           pathlen,
@@ -375,6 +392,47 @@ void eep_init(struct device *d)
     fflush(stdout);
 }
 
+static char *link_compare(int sta, int cap)
+{
+  if (sta < cap)
+    return "downgraded";
+  if (sta > cap)
+    return "strange";
+  return "ok";
+}
+
+int pci_check_link_cap(struct pci_dev *pdev)
+{
+  struct pci_cap *cap;
+  int status;
+  uint32_t linkcap, cap_speed, cap_width, sta_speed, sta_width;
+  uint16_t linksta;
+  cap = pci_find_cap(pdev, PCI_CAP_ID_EXP, PCI_CAP_NORMAL);
+  linkcap = pci_read_long(pdev, cap->addr + PCI_EXP_LNKCAP);
+  cap_speed = linkcap & PCI_EXP_LNKCAP_SPEED;
+  cap_width = (linkcap & PCI_EXP_LNKCAP_WIDTH) >> 4;
+  linksta = pci_read_word(pdev, cap->addr + PCI_EXP_LNKSTA);
+  sta_speed = linksta & PCI_EXP_LNKSTA_SPEED;
+  sta_width = (linksta & PCI_EXP_LNKSTA_WIDTH) >> 4;
+
+  if (    (0 == strcmp("ok", link_compare(sta_speed, cap_speed)))
+       && (0 == strcmp("ok", link_compare(sta_width, cap_width)))) {
+      status = IDEAL;
+  } else if (    (0 != strcmp("ok", link_compare(sta_speed, cap_speed)))
+              && (0 == strcmp("ok", link_compare(sta_width, cap_width)))) {
+      status = SPEED_DEGRADED;
+  } else if (    (0 == strcmp("ok", link_compare(sta_speed, cap_speed)))
+              && (0 != strcmp("ok", link_compare(sta_width, cap_width)))) {
+      status = WIDTH_DEGRADED;
+  } else if (    (0 != strcmp("ok", link_compare(sta_speed, cap_speed)))
+              && (0 != strcmp("ok", link_compare(sta_width, cap_width)))) {
+      status = SPEED_N_WIDTH_DEGRADED;
+  } else {
+      // MISRA-C compliance
+  }
+  return status;
+}
+
 bool pci_is_hub_alive(struct device *d)
 {
   return (NULL != d->bridge->first_bus->first_dev);
@@ -420,6 +478,28 @@ bool pcidev_is_adnacom(struct pci_dev *p)
     return true;
   }
   return false;
+}
+
+/*! @brief Removes the H1A downstream port */
+static void remove_downstream(struct pci_dev *p)
+{
+  char filename[256] = "\0";
+  int dsfd, res;
+  pci_get_remove(p, filename, sizeof(filename));
+  if((dsfd = open(filename, O_WRONLY )) == -1) PRINT_ERROR;
+  printf("Removing %s H1A downstream port from system\n", filename);
+  if((res = write( dsfd, "1", 1 )) == -1) PRINT_ERROR;
+  close(dsfd);
+}
+
+/*! @brief Rescan the pci bus */
+static void rescan_pci(void)
+{
+    int scanfd, res;
+    if((scanfd = open("/sys/bus/pci/rescan", O_WRONLY )) == -1) PRINT_ERROR;
+    if((res = write( scanfd, "1", 1 )) == -1) PRINT_ERROR;
+    close(scanfd);
+    sleep(1);
 }
 
 int config_fetch(struct device *d, unsigned int pos, unsigned int len)
@@ -1136,11 +1216,13 @@ static int save_to_adna_list(void)
       snprintf(mfg_str, sizeof(mfg_str), "%04x:%04x:%04x",
                d->dev->vendor_id, d->dev->device_id, d->dev->device_class);
       pci_filter_parse_slot(f, bdf_str);
-      pci_filter_parse_id(f, bdf_str);
+      pci_filter_parse_id(f, mfg_str);
       a->bdf = f;
       a->bIsD3 = false;
+      a->bLinkCheck = false;
       a->dl_down_cnt = 0;
       a->hub_down_cnt = 0;
+      a->link_bad_cnt = 0;
       if (d->parent_bus->parent_bridge->br_dev != NULL)
         a->parent = d->parent_bus->parent_bridge->br_dev;
       if (d->bridge->first_bus->first_dev != NULL)
@@ -1242,14 +1324,45 @@ static int adna_d3_to_d0(void)
   return status;
 }
 
+/*! @brief 100ms timer */
+static void settimer100ms(void)
+{
+    struct itimerval new_timer;
+    struct itimerval old_timer;
+
+    new_timer.it_value.tv_sec = 1;
+    new_timer.it_value.tv_usec = 0;
+    new_timer.it_interval.tv_sec = 0;
+    new_timer.it_interval.tv_usec = 100 * 1000;
+
+    setitimer(ITIMER_REAL, &new_timer, &old_timer);
+    signal(SIGALRM, timer_callback);
+}
+
+/*! @brief Stop timer */
+static void stoptimer(void)
+{
+    struct itimerval new_timer;
+    struct itimerval old_timer;
+
+    new_timer.it_value.tv_sec = 0;
+    new_timer.it_value.tv_usec = 0;
+    new_timer.it_interval.tv_sec = 0;
+    new_timer.it_interval.tv_usec = 0;
+
+    setitimer(ITIMER_REAL, &new_timer, &old_timer);
+}
+
 static void timer_callback(int signum)
 {
   (void)(signum);
   struct adna_device *a;
   struct device *d;
   int status;
-  first_dev = NULL;
   char bdf[10];
+  bool is_linkup = false, is_hubup = false;
+  int link_state;
+  first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
   if (status != EXIT_SUCCESS)
@@ -1265,16 +1378,37 @@ static void timer_callback(int signum)
 
     for (d = first_dev; d; d = d->next) {
       if (pci_filter_match(a->bdf, d->dev)) {
-        // check the link up
-        if (!pci_dl_active(d->dev)) {
+        is_linkup = pci_dl_active(d->dev);
+        is_hubup = pci_is_hub_alive(d);
+
+        if (!is_linkup) {
           a->dl_down_cnt++;
           printf("%s link has been down for %d\n", bdf, a->dl_down_cnt);
         }
-        // check the usb hub
-        if (!pci_is_hub_alive(d)) {
+
+        if (!is_hubup) {
           a->hub_down_cnt++;
           printf("%s partner usb hub has been down for %d\n", bdf, a->hub_down_cnt);
         }
+
+        link_state = pci_check_link_cap(d->dev);
+
+        if (is_linkup && !is_hubup) {
+          stoptimer();
+          rescan_pci();
+          sleep(1);
+          a->link_bad_cnt++;
+          settimer100ms();
+        } else if (!is_linkup && is_hubup) {
+          stoptimer();
+          remove_downstream(d->dev);
+          rescan_pci();
+          sleep(1);
+          settimer100ms();
+        } else {
+          // 
+        }
+
       }
     }
   }
