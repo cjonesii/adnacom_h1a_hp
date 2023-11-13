@@ -1161,8 +1161,8 @@ static int adna_pci_process(void)
     }
     save_to_adna_list();
     show();
+    adna_pacc_cleanup();
   }
-  adna_pacc_cleanup();
 
   return 0;
 }
@@ -1226,7 +1226,7 @@ static void timer_callback(int signum)
   struct adna_device *a;
   struct device *d;
   int status;
-  first_adna = NULL;
+  // first_adna = NULL;
   first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
@@ -1250,7 +1250,7 @@ static void timer_callback(int signum)
         }
       }
     }
-
+  adna_pacc_cleanup();
   }
 
 #else 
