@@ -73,7 +73,7 @@ struct adnatool_pci_device {
         u32 cls_rev;
 } adnatool_pci_devtbl[] = {
         { .vid = PLX_VENDOR_ID,     .did = PLX_H1A_DEVICE_ID, .cls_rev = PCI_CLASS_BRIDGE_PCI, },
-        { .vid = ASMEDIA_VENDOR_ID, .did = ASMEDIA_DEVICE_ID, .cls_rev = PCI_CLASS_SERIAL_USB, },
+        { .vid = TI_VENDOR_ID,      .did = TI_DEVICE_ID,      .cls_rev = PCI_CLASS_SERIAL_USB, },
         {0}, /* sentinel */
 };
 
