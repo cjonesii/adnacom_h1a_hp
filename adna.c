@@ -1291,14 +1291,14 @@ static void timer_callback(int signum)
         (void)(link_state);
 
         if (is_linkup && !is_hubup) {
-          printf(" , was Down previously\n");
+          printf(" , was Down previously");
           stoptimer();
           rescan_pci();
           sleep(1);
           settimer100ms();
           show_verbose(d);
         } else if (!is_linkup && is_hubup) {
-          printf(" , was Up previously\n");
+          printf(" , was Up previously");
           stoptimer();
           remove_downstream(a);
           rescan_pci();
@@ -1308,7 +1308,7 @@ static void timer_callback(int signum)
         } else if (!is_linkup && !is_hubup) {
           if ((10 == a->link_down_cnt) || 
               (10 == a->hub_down_cnt)) {
-            printf(" and has been Down for 1s\n");
+            printf(" and has been Down for 1s");
             a->link_down_cnt = 0;
             a->hub_down_cnt = 0;
             disable_port(a);
@@ -1318,6 +1318,7 @@ static void timer_callback(int signum)
         } else {
           ;//
         }
+        printf("\n");
       }
     }
   }
