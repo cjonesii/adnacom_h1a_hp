@@ -1,9 +1,29 @@
-/*
- *	The PCI Utilities -- List All PCI Devices
+/** @file: adna.c
  *
- *	Copyright (c) 1997--2020 Martin Mares <mj@ucw.cz>
+ * Adnacom PCIe Hotplug tool
+ * Copyright (C) 2022-2023, Adnacom Inc
  *
- *	Can be freely distributed and used under the terms of the GNU GPL.
+ * Based on the PCI Library
+ * Copyright (c) 1998--2020 Martin Mares <mj@ucw.cz>
+ * pcimem.c code
+ * Copyright (C) 2010, Bill Farrow (bfarrow@beyondelectronics.us)
+ * devmem2.c code
+ * Copyright (C) 2000, Jan-Derk Bakker (J.D.Bakker@its.tudelft.nl)
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ *
  */
 
 #include <stdio.h>
@@ -209,14 +229,7 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
   close(fd);
   return (access ? 0 : (uint32_t)read_result);
 }
-#if 0
-/*! @brief Disables H1A downstream port in PCIe switch register */
-static uint32_t pcimem_read_linkup(struct adna_device *a)
-{
-  uint32_t readbuffer = pcimem(REG_READ, a->parent, H1A_DS_LINK_OFFSET, 0);
-  return readbuffer;
-}
-#endif
+
 /*! @brief Disables H1A downstream port in PCIe switch register */
 static void disable_port(struct adna_device *a)
 {
@@ -1247,8 +1260,6 @@ static void timer_callback(int signum)
   static bool is_linkup = false;
   static bool is_hubup = false;
   static int link_state;
-  // uint32_t readbuffer;
-  // uint16_t linkstat;
   first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
@@ -1257,7 +1268,7 @@ static void timer_callback(int signum)
 
   for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
     snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->this->bus, a->this->slot, a->this->func);
-    if (a->bIsD3) { // Do not process non hotplug device
+    if (a->bIsD3) {
       printf("%s is not Hotplug capable. Skipping device.\n", bdf);
       continue;
     }
@@ -1267,9 +1278,6 @@ static void timer_callback(int signum)
         refresh_device_cache(d->dev);
         is_linkup = pci_dl_active(d->dev);
         is_hubup = pci_is_hub_alive(d);
-        // readbuffer = pcimem_read_linkup(a);
-        // linkstat = (readbuffer >> 29) & 1;
-        // printf("%s downstream port link is %s", bdf, (linkstat == 1) ? "Up" : "Down");
         printf("%s downstream port link is %s", bdf, is_linkup ? "Up" : "Down");
 
         if (!is_linkup) {
