@@ -12,7 +12,6 @@
 #include <stdarg.h>
 #include "adna.h"
 #include <stdbool.h>
-#include "eep.h"
 #include <unistd.h>
 #include <termios.h>
 #include <ctype.h>
@@ -216,152 +215,28 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
   close(fd);
   return (access ? 0 : (uint32_t)read_result);
 }
-#if 0
-static void check_for_ready_or_done(struct device *d)
-{
-    volatile uint32_t eepCmdStatus = EEP_CMD_STAT_MAX;
-    do {
-        for (volatile int delay = 0; delay < 5000; delay++) {}
-        eepCmdStatus = ((pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, 0)) >> EEP_CMD_STATUS_OFFSET) & 1;
-    } while (CMD_COMPLETE != eepCmdStatus);
-    if (EepOptions.bVerbose)
-        printf("Controller is ready\n");
-}
 
-static void eep_data(struct device *d, uint32_t cmd, volatile uint32_t *buffer)
-{
-    if (EepOptions.bVerbose)
-        printf("Function: %s\n", __func__);
-
-    check_for_ready_or_done(d);
-    if (EepOptions.bVerbose)
-        printf("  EEPROM Control: 0x%08x\n", cmd);
-    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, cmd);
-    check_for_ready_or_done(d);
-
-    if (RD_4B_FR_BLKADDR_TO_BUFF == ((cmd >> EEP_CMD_OFFSET) & 0x7)) {
-        *buffer = pcimem(d->dev, EEP_BUFFER_ADDR, 0);
-        if (EepOptions.bVerbose)
-            printf("Read buffer: 0x%08x\n", *buffer);
-    }
-}
-
-void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer)
-{
-    if (EepOptions.bVerbose)
-        printf("Function: %s\n", __func__);
-    union eep_status_and_control_reg ctrl_reg = {0};
-    // Section 6.8.2 step#2
-    ctrl_reg.cmd_n_status_struct.cmd = RD_4B_FR_BLKADDR_TO_BUFF;
-    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    // Section 6.8.2 step#3 and step#4
-    eep_data(d, ctrl_reg.cmd_u32, read_buffer);
-    fflush(stdout);
-}
-
-void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer)
-{
-    if (EepOptions.bVerbose)
-        printf("Function: %s\n", __func__);
-    union eep_status_and_control_reg ctrl_reg = {0};
-    uint32_t buffer_32 = 0;
-
-    ctrl_reg.cmd_n_status_struct.cmd = RD_4B_FR_BLKADDR_TO_BUFF;
-    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    eep_data(d, ctrl_reg.cmd_u32, &buffer_32);
-
-    *read_buffer = buffer_32 & 0xFFFF;
-    fflush(stdout);
-}
-
-void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer)
-{
-    if (EepOptions.bVerbose)
-        printf("Function: %s\n", __func__);
-    union eep_status_and_control_reg ctrl_reg = {0};
-
-    check_for_ready_or_done(d);
-    // Section 6.8.1 step#2
-    pcimem(d->dev, EEP_BUFFER_ADDR, write_buffer);
-    check_for_ready_or_done(d);
-    // Section 6.8.1 step#3
-    ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
-    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
-    // Section 6.8.1 step#4
-    ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
-    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    eep_data(d, ctrl_reg.cmd_u32, NULL);
-
-    fflush(stdout);
-}
-
-void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer)
-{
-    if (EepOptions.bVerbose)
-        printf("Function: %s\n", __func__);
-    union eep_status_and_control_reg ctrl_reg = {0};
-    uint32_t buffer_32 = (uint32_t)write_buffer;
-
-    check_for_ready_or_done(d);
-    // Section 6.8.1 step#2
-    pcimem(d->dev, EEP_BUFFER_ADDR, buffer_32);
-    check_for_ready_or_done(d);
-    // Section 6.8.1 step#3
-    ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
-    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
-    // Section 6.8.1 step#4
-    ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
-    ctrl_reg.cmd_n_status_struct.blk_addr = offset;
-    eep_data(d, ctrl_reg.cmd_u32, NULL);
-
-    fflush(stdout);
-}
-
-void eep_init(struct device *d)
-{
-    if (EepOptions.bVerbose)
-        printf("Function: %s\n", __func__);
-    union eep_status_and_control_reg ctrl_reg = {0};
-
-    // Section 6.8.3 step#2
-    pcimem(d->dev, EEP_BUFFER_ADDR, EEP_INIT_VAL);
-    // Section 6.8.3 step#3
-    ctrl_reg.cmd_n_status_struct.cmd = SET_WR_EN_LATCH;
-    ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
-    ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
-    pcimem(d->dev, EEP_STAT_N_CTRL_ADDR, ctrl_reg.cmd_u32);
-    // Section 6.8.3 step#4
-    ctrl_reg.cmd_n_status_struct.cmd = WR_4B_FR_BUFF_TO_BLKADDR;
-    ctrl_reg.cmd_n_status_struct.addr_width_override = ADDR_WIDTH_WRITABLE;
-    ctrl_reg.cmd_n_status_struct.addr_width = TWO_BYTES;
-    eep_data(d, ctrl_reg.cmd_u32, NULL);
-
-    printf("EEPROM was initialized. Please restart your system for changes to take effect.\n");
-    fflush(stdout);
-}
-#endif
 /*! @brief Disables H1A downstream port in PCIe switch register */
 static uint32_t pcimem_read_linkup(struct adna_device *a)
 {
-  uint32_t readbuffer = pcimem(a->parent, H1A_DS_LINK_OFFSET, 0);
+  uint32_t readbuffer = pcimem(REG_READ, a->parent, H1A_DS_LINK_OFFSET, 0);
   return readbuffer;
 }
 
 /*! @brief Disables H1A downstream port in PCIe switch register */
 static void disable_port(struct adna_device *a)
 {
-  int ptControl = pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
+  int ptControl = pcimem(REG_READ, a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl |= 1;
-  pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
+  pcimem(REG_WRITE, a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 
 /*! @brief Enables H1A downstream port in PCIe switch register */
 static void enable_port(struct adna_device *a)
 {
-  int ptControl = pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
+  int ptControl = pcimem(REG_READ, a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl &= ~1;
-  #error BUG in this method. Valid 0 data is eval'd as READ command.
-  pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
+  pcimem(REG_WRITE, a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 
 static char *link_compare(int sta, int cap)
