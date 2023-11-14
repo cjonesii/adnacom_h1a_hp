@@ -1247,7 +1247,7 @@ static void stoptimer(void)
 static void timer_callback(int signum)
 {
   (void)(signum);
-#if 0
+#if 1
   struct adna_device *a;
   struct device *d;
   int status;
@@ -1264,24 +1264,24 @@ static void timer_callback(int signum)
     exit(status);
 
   for (a = first_adna; a; a=a->next) { // This is the list of all Adnacom downstream devices (listed during init)
-    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->bdf->bus, a->bdf->slot, a->bdf->func);
+    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->this->bus, a->this->slot, a->this->func);
     if (a->bIsD3) { // Do not process non hotplug device
       printf("%s is not Hotplug capable. Skipping device.\n", bdf);
       continue;
     }
 
     for (d = first_dev; d; d = d->next) {
-      if (pci_filter_match(a->bdf, d->dev)) {
+      if (pci_filter_match(a->this, d->dev)) {
         refresh_device_cache(d->dev);
         is_linkup = pci_dl_active(d->dev);
         is_hubup = pci_is_hub_alive(d);
-        readbuffer = pcimem_read_linkup(d);
+        readbuffer = pcimem_read_linkup(a);
         linkstat = (readbuffer >> 29) & 1;
         printf("H1A DS Port %s Link is %s\n", bdf, (linkstat == 1) ? "Up" : "Down");
 
         if (!is_linkup) {
-          a->dl_down_cnt++;
-          printf("%s link has been down for %d\n", bdf, a->dl_down_cnt);
+          a->link_down_cnt++;
+          printf("%s link has been down for %d\n", bdf, a->link_down_cnt);
         }
 
         if (!is_hubup) {
@@ -1298,18 +1298,18 @@ static void timer_callback(int signum)
           settimer100ms();
         } else if (!is_linkup && is_hubup) {
           stoptimer();
-          remove_downstream(d->dev);
+          remove_downstream(a);
           rescan_pci();
           sleep(1);
           settimer100ms();
         } else if (!is_linkup && !is_hubup) {
-          if ((20 == a->dl_down_cnt) || 
+          if ((20 == a->link_down_cnt) || 
               (20 == a->hub_down_cnt)) {
-            a->dl_down_cnt = 0;
+            a->link_down_cnt = 0;
             a->hub_down_cnt = 0;
-            disable_port(d);
+            disable_port(a);
             for (int noop = 0; noop < 100; noop++) { }
-            enable_port(d);
+            enable_port(a);
           }
         } else {
           ;//
