@@ -60,7 +60,7 @@ static int NumDevices = 0;
 const char program_name[] = "adna";
 char g_h1a_us_port_bar0[256] = "\0";
 uint8_t *g_pBuffer = NULL;
-struct eep_options EepOptions;
+struct adna_options AdnaOptions;
 
 /*** Our view of the PCI bus ***/
 
@@ -81,7 +81,7 @@ struct adnatool_pci_device {
         {0}, /* sentinel */
 };
 
-struct eep_options {
+struct adna_options {
   bool bVerbose;
   int bLoadFile;
   char    FileName[255];
@@ -159,7 +159,7 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
 
   if ((fd = open(filename, O_RDWR | O_SYNC)) == -1)
     PRINT_ERROR;
-  if (EepOptions.bVerbose) {
+  if (AdnaOptions.bVerbose) {
     printf("%s opened.\n", filename);
     printf("Target offset is 0x%x, page size is %ld\n", (int)target, sysconf(_SC_PAGE_SIZE));
   }
@@ -170,13 +170,13 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
     map_size = target + items_count * type_width - target_base;
 
   /* Map one page */
-  if (EepOptions.bVerbose)
+  if (AdnaOptions.bVerbose)
     printf("mmap(%d, %d, 0x%x, 0x%x, %d, 0x%x)\n", 0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, (int)target);
 
   map_base = mmap(0, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, target_base);
   if (map_base == (void *)-1)
     PRINT_ERROR;
-  if (EepOptions.bVerbose)
+  if (AdnaOptions.bVerbose)
     printf("PCI Memory mapped to address 0x%08lx.\n", (unsigned long)map_base);
   fflush(stdout);
 
@@ -185,7 +185,7 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
     read_result = *((uint32_t *)virt_addr);
 
     if (read_result != prev_read_result || i == 0) {
-      if (EepOptions.bVerbose)
+      if (AdnaOptions.bVerbose)
         printf("Reg 0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
       read_result_dupped = 0;
     } else {
@@ -204,7 +204,7 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
     *((uint32_t *)virt_addr) = writeval;
     read_result = *((uint32_t *)virt_addr);
       
-    if (EepOptions.bVerbose)
+    if (AdnaOptions.bVerbose)
       printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
             writeval, type_width, read_result);
     fflush(stdout);
@@ -334,7 +334,6 @@ static void remove_downstream(struct adna_device *a)
   int dsfd, res;
   pci_get_remove(a->this, filename, sizeof(filename));
   if((dsfd = open(filename, O_WRONLY )) == -1) PRINT_ERROR;
-  printf("Removing %s H1A downstream port from system\n", filename);
   if((res = write( dsfd, "1", 1 )) == -1) PRINT_ERROR;
   close(dsfd);
 }
@@ -1291,14 +1290,14 @@ static void timer_callback(int signum)
         (void)(link_state);
 
         if (is_linkup && !is_hubup) {
-          printf(" , was Down previously");
+          printf(", was Down previously\n");
           stoptimer();
           rescan_pci();
           sleep(1);
           settimer100ms();
           show_verbose(d);
         } else if (!is_linkup && is_hubup) {
-          printf(" , was Up previously");
+          printf(", was Up previously\n");
           stoptimer();
           remove_downstream(a);
           rescan_pci();
@@ -1308,7 +1307,8 @@ static void timer_callback(int signum)
         } else if (!is_linkup && !is_hubup) {
           if ((10 == a->link_down_cnt) || 
               (10 == a->hub_down_cnt)) {
-            printf(" and has been Down for 1s");
+            printf(" and has been Down for 1s\n");
+            printf("%s disabling/enabling port", bdf);
             a->link_down_cnt = 0;
             a->hub_down_cnt = 0;
             disable_port(a);
@@ -1405,6 +1405,8 @@ int main(int argc, char **argv)
   if (argc == 2 && !strcmp(argv[1], "--version")) {
     puts("Adnacom version " ADNATOOL_VERSION);
     return 0;
+  } else if ((argc == 2 && !strcmp(argv[1], "-v"))) {
+    AdnaOptions.bVerbose = true;
   }
 
   status = adna_pci_process();
