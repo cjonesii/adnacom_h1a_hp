@@ -107,12 +107,6 @@ bool pci_is_hub_alive(struct device *d);
 bool pci_is_downstream(struct pci_dev *pdev);
 int pci_check_link_cap(struct pci_dev *pdev);
 
-void eep_read(struct device *d, uint32_t offset, volatile uint32_t *read_buffer);
-void eep_read_16(struct device *d, uint32_t offset, uint16_t *read_buffer);
-void eep_write(struct device *d, uint32_t offset, uint32_t write_buffer);
-void eep_write_16(struct device *d, uint32_t offset, uint16_t write_buffer);
-void eep_init(struct device *d);
-
 static void stoptimer(void);
 static void settimer100ms(void);
 static void timer_callback(int signum);
@@ -160,7 +154,7 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
   if ((fd = open(filename, O_RDWR | O_SYNC)) == -1)
     PRINT_ERROR;
   if (AdnaOptions.bVerbose) {
-    printf("%s opened.\n", filename);
+    printf("\n%s opened.\n", filename);
     printf("Target offset is 0x%x, page size is %ld\n", (int)target, sysconf(_SC_PAGE_SIZE));
   }
   fflush(stdout);
@@ -205,7 +199,7 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
     read_result = *((uint32_t *)virt_addr);
       
     if (AdnaOptions.bVerbose)
-      printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
+      printf("Written 0x%0*lX; readback 0x%0*lX\n", type_width,
             writeval, type_width, read_result);
     fflush(stdout);
   }
@@ -215,14 +209,14 @@ static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t 
   close(fd);
   return (access ? 0 : (uint32_t)read_result);
 }
-
+#if 0
 /*! @brief Disables H1A downstream port in PCIe switch register */
 static uint32_t pcimem_read_linkup(struct adna_device *a)
 {
   uint32_t readbuffer = pcimem(REG_READ, a->parent, H1A_DS_LINK_OFFSET, 0);
   return readbuffer;
 }
-
+#endif
 /*! @brief Disables H1A downstream port in PCIe switch register */
 static void disable_port(struct adna_device *a)
 {
@@ -1253,8 +1247,8 @@ static void timer_callback(int signum)
   static bool is_linkup = false;
   static bool is_hubup = false;
   static int link_state;
-  uint32_t readbuffer;
-  uint16_t linkstat;
+  // uint32_t readbuffer;
+  // uint16_t linkstat;
   first_dev = NULL;
 
   status = adna_pci_process(); // Rescan all PCIe, add Adnacom device to the new lspci device list.
@@ -1273,9 +1267,10 @@ static void timer_callback(int signum)
         refresh_device_cache(d->dev);
         is_linkup = pci_dl_active(d->dev);
         is_hubup = pci_is_hub_alive(d);
-        readbuffer = pcimem_read_linkup(a);
-        linkstat = (readbuffer >> 29) & 1;
-        printf("%s downstream port link is %s", bdf, (linkstat == 1) ? "Up" : "Down");
+        // readbuffer = pcimem_read_linkup(a);
+        // linkstat = (readbuffer >> 29) & 1;
+        // printf("%s downstream port link is %s", bdf, (linkstat == 1) ? "Up" : "Down");
+        printf("%s downstream port link is %s", bdf, is_linkup ? "Up" : "Down");
 
         if (!is_linkup) {
           a->link_down_cnt++;
