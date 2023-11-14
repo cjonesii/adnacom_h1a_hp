@@ -134,7 +134,7 @@ static void pci_get_remove(struct pci_filter *f, char *path, size_t pathlen)
 {
   snprintf(path, 
           pathlen,
-          "/sys/bus/pci/devices/%04x:%02x:%02x.%d/resource0",
+          "/sys/bus/pci/devices/%04x:%02x:%02x.%d/remove",
           f->domain,
           f->bus,
           f->slot,
@@ -142,41 +142,21 @@ static void pci_get_remove(struct pci_filter *f, char *path, size_t pathlen)
   return;
 }
 
-static uint32_t pcimem(struct pci_filter *f, uint32_t reg, uint32_t data)
+static uint32_t pcimem(int access, struct pci_filter *f, uint32_t reg, uint32_t data)
 {
   int fd;
   void *map_base, *virt_addr;
   uint64_t read_result, writeval, prev_read_result = 0;
   off_t target, target_base;
-  int access_type = 'w';
   int items_count = 1;
   int read_result_dupped = 0;
-  int type_width;
+  int type_width = 4;
   int i;
   int map_size = 4096UL;
 
   char filename[256] = "\0";
   pci_get_res0(f, filename, sizeof(filename));
   target = (off_t)reg;
-
-  switch (access_type)
-  {
-  case 'b':
-    type_width = 1;
-    break;
-  case 'h':
-    type_width = 2;
-    break;
-  case 'w':
-    type_width = 4;
-    break;
-  case 'd':
-    type_width = 8;
-    break;
-  default:
-    fprintf(stderr, "Illegal data type '%c'.\n", access_type);
-    exit(2);
-  }
 
   if ((fd = open(filename, O_RDWR | O_SYNC)) == -1)
     PRINT_ERROR;
@@ -201,34 +181,15 @@ static uint32_t pcimem(struct pci_filter *f, uint32_t reg, uint32_t data)
     printf("PCI Memory mapped to address 0x%08lx.\n", (unsigned long)map_base);
   fflush(stdout);
 
-  for (i = 0; i < items_count; i++)
-  {
-
+  for (i = 0; i < items_count; i++) {
     virt_addr = map_base + target + i * type_width - target_base;
-    switch (access_type)
-    {
-    case 'b':
-      read_result = *((uint8_t *)virt_addr);
-      break;
-    case 'h':
-      read_result = *((uint16_t *)virt_addr);
-      break;
-    case 'w':
-      read_result = *((uint32_t *)virt_addr);
-      break;
-    case 'd':
-      read_result = *((uint64_t *)virt_addr);
-      break;
-    }
+    read_result = *((uint32_t *)virt_addr);
 
-    if (read_result != prev_read_result || i == 0)
-    {
+    if (read_result != prev_read_result || i == 0) {
       if (EepOptions.bVerbose)
         printf("Reg 0x%04X: 0x%0*lX\n", (int)(target + i * type_width), type_width * 2, read_result);
       read_result_dupped = 0;
-    }
-    else
-    {
+    } else {
       if (!read_result_dupped)
         printf("...\n");
       read_result_dupped = 1;
@@ -239,28 +200,11 @@ static uint32_t pcimem(struct pci_filter *f, uint32_t reg, uint32_t data)
 
   fflush(stdout);
 
-  if (data)
-  {
+  if (REG_WRITE == access) {
     writeval = (uint64_t)data;
-    switch (access_type)
-    {
-    case 'b':
-      *((uint8_t *)virt_addr) = writeval;
-      read_result = *((uint8_t *)virt_addr);
-      break;
-    case 'h':
-      *((uint16_t *)virt_addr) = writeval;
-      read_result = *((uint16_t *)virt_addr);
-      break;
-    case 'w':
-      *((uint32_t *)virt_addr) = writeval;
-      read_result = *((uint32_t *)virt_addr);
-      break;
-    case 'd':
-      *((uint64_t *)virt_addr) = writeval;
-      read_result = *((uint64_t *)virt_addr);
-      break;
-    }
+    *((uint32_t *)virt_addr) = writeval;
+    read_result = *((uint32_t *)virt_addr);
+      
     if (EepOptions.bVerbose)
       printf("Written 0x%0*lX; readback 0x%*lX\n", type_width,
             writeval, type_width, read_result);
@@ -270,7 +214,7 @@ static uint32_t pcimem(struct pci_filter *f, uint32_t reg, uint32_t data)
   if (munmap(map_base, map_size) == -1)
     PRINT_ERROR;
   close(fd);
-  return (data ? 0 : (uint32_t)read_result);
+  return (access ? 0 : (uint32_t)read_result);
 }
 #if 0
 static void check_for_ready_or_done(struct device *d)
@@ -416,6 +360,7 @@ static void enable_port(struct adna_device *a)
 {
   int ptControl = pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, 0);
   ptControl &= ~1;
+  #error BUG in this method. Valid 0 data is eval'd as READ command.
   pcimem(a->parent, H1A_DISABLE_PORT1_OFFSET, ptControl);
 }
 

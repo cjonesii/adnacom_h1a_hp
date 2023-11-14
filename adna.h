@@ -100,6 +100,11 @@ enum link_state {
   LINK_QUALITY_MAX
 };
 
+enum access {
+    REG_READ,
+    REG_WRITE
+};
+
 /* ls-vpd.c */
 
 void cap_vpd(struct device *d);
