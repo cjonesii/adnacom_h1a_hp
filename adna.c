@@ -1303,7 +1303,6 @@ static void timer_callback(int signum)
           rescan_pci();
           sleep(1);
           settimer100ms();
-          show_verbose(d);
         } else if (!is_linkup && !is_hubup) {
           if ((10 == a->link_down_cnt) || 
               (10 == a->hub_down_cnt)) {
