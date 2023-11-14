@@ -14,7 +14,3 @@ Copyright (c) 1998--2020 Martin Mares <mj@ucw.cz>
 
 pcimem.c
 Copyright (C) 2010, Bill Farrow (bfarrow@beyondelectronics.us)
-
-PlxSdk
-Copyright 2013-2019 Broadcom, Inc
-Copyright (c) 2009 to 2012 PLX Technology Inc.  All rights reserved.
