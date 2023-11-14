@@ -1,0 +1,9 @@
+[Unit]
+Description=H1A Hotplug Utility service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/adna
+
+[Install]
+WantedBy=multi-user.target

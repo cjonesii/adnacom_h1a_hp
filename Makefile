@@ -1,3 +1,6 @@
+# Makefile for H1A Hotplug Utility
+# (c) 2022--2023 Adnacom, Inc.
+# Based on
 # Makefile for The PCI Utilities
 # (c) 1998--2020 Martin Mares <mj@ucw.cz>
 
@@ -40,6 +43,11 @@ MANDIR:=$(shell if [ -d $(PREFIX)/share/man ] ; then echo $(PREFIX)/share/man ; 
 INCDIR=$(PREFIX)/include
 LIBDIR=$(PREFIX)/lib
 PKGCFDIR=$(LIBDIR)/pkgconfig
+
+# Systemd file and directory
+SERVICE_FILE=h1a_hotplug.service
+SERVICE_NAME=h1a_hotplug
+SYSTEMD_DIR=`pkg-config systemd --variable=systemdsystemunitdir`
 
 # Commands
 INSTALL=install
@@ -109,7 +117,14 @@ clean:
 distclean: clean
 
 install: all
+# Use default if SYSTEMD_DIR is empty
+ifeq ($(SYSTEMD_DIR),"")
+	SYSTEMD_DIR=/etc/systemd/system
+endif
+	$(INSTALL) -c -m 755 $(SERVICE_FILE) $(SYSTEMD_DIR)
+
 # -c is ignored on Linux, but required on FreeBSD
+	$(DIRINSTALL) -m 755 $(DESTDIR)$(SBINDIR) $(DESTDIR)$(IDSDIR)
 	$(INSTALL) -c -m 755 $(STRIP) adna $(DESTDIR)$(SBINDIR)
 
 ifeq ($(SHARED),yes)
@@ -140,7 +155,18 @@ else
 endif
 endif
 
+service:
+	$(shell systemctl enable $(SERVICE_FILE))
+	$(shell systemctl start $(SERVICE_NAME))
+
 uninstall: all
+# Use default if SYSTEMD_DIR is empty
+ifeq ($(SYSTEMD_DIR),"")
+	SYSTEMD_DIR=/etc/systemd/system
+endif
+	$(shell systemctl stop $(SERVICE_NAME))
+	$(shell systemctl disable $(SERVICE_FILE))
+	rm -f $(SYSTEMD_DIR)/$(SERVICE_FILE)
 	rm -f $(DESTDIR)$(SBINDIR)/adna $(DESTDIR)$(SBINDIR)/setpci $(DESTDIR)$(SBINDIR)/update-pciids
 ifeq ($(SHARED),yes)
 	rm -f $(DESTDIR)$(LIBDIR)/$(PCILIB) $(DESTDIR)$(LIBDIR)/$(LIBNAME).so$(ABI_VERSION)
