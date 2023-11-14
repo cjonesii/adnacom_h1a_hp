@@ -1170,7 +1170,7 @@ void adna_set_d3_flag(int devnum)
       a->bIsD3 = true;
   }
 }
-
+#if 0
 static int adna_d3_to_d0(void)
 {
   struct adna_device *a;
@@ -1214,7 +1214,7 @@ static int adna_d3_to_d0(void)
 
   return status;
 }
-
+#endif
 /*! @brief 100ms timer */
 static void settimer100ms(void)
 {
@@ -1277,34 +1277,38 @@ static void timer_callback(int signum)
         is_hubup = pci_is_hub_alive(d);
         readbuffer = pcimem_read_linkup(a);
         linkstat = (readbuffer >> 29) & 1;
-        printf("H1A DS Port %s Link is %s\n", bdf, (linkstat == 1) ? "Up" : "Down");
+        printf("%s downstream port link is %s", bdf, (linkstat == 1) ? "Up" : "Down");
 
         if (!is_linkup) {
           a->link_down_cnt++;
-          printf("%s link has been down for %d\n", bdf, a->link_down_cnt);
         }
 
         if (!is_hubup) {
           a->hub_down_cnt++;
-          printf("%s partner usb hub has been down for %d\n", bdf, a->hub_down_cnt);
         }
 
         link_state = pci_check_link_cap(d->dev);
+        (void)(link_state);
 
         if (is_linkup && !is_hubup) {
+          printf(" , was Down previously\n");
           stoptimer();
           rescan_pci();
           sleep(1);
           settimer100ms();
+          show_verbose(d);
         } else if (!is_linkup && is_hubup) {
+          printf(" , was Up previously\n");
           stoptimer();
           remove_downstream(a);
           rescan_pci();
           sleep(1);
           settimer100ms();
+          show_verbose(d);
         } else if (!is_linkup && !is_hubup) {
-          if ((20 == a->link_down_cnt) || 
-              (20 == a->hub_down_cnt)) {
+          if ((10 == a->link_down_cnt) || 
+              (10 == a->hub_down_cnt)) {
+            printf(" and has been Down for 1s\n");
             a->link_down_cnt = 0;
             a->hub_down_cnt = 0;
             disable_port(a);
@@ -1314,7 +1318,6 @@ static void timer_callback(int signum)
         } else {
           ;//
         }
-        show_verbose(d);
       }
     }
   }
@@ -1381,7 +1384,6 @@ static void timer_callback(int signum)
 
   fflush(stdout);
 #endif
-  printf("Oleh!\n");
 }
 
 /* Main */
