@@ -1,9 +1,10 @@
 Information
 ~~~~~~~~~~~
 
-This is the Adnacom H1A EEPROM tool. It reads from and writes to
-the EEPROM of H1A device, specifically the device serial number
-and hotplug bit flag.
+This is the Adnacom PCIe Hotplug tool. It monitors the link status of the 
+H1A downstream ports and does appropriate actions to rescan or re-enumerate
+the bus where the Adnacom device is installed whenever any of the downstream
+link status change.
 
 Copyright (C) 2022, 2023 Adnacom Inc.
 
