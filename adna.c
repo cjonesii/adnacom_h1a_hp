@@ -1246,7 +1246,6 @@ static void stoptimer(void)
 static void timer_callback(int signum)
 {
   (void)(signum);
-#if 1
   struct adna_device *a;
   struct device *d;
   int status;
@@ -1322,68 +1321,6 @@ static void timer_callback(int signum)
     }
   }
   adna_pacc_cleanup();
-#else
-  struct adna_device *a;
-  uint32_t read_buffer;
-  uint32_t hotplug_buffer;
-  int linkStat = 0xff;
-  int linkQuality = LINK_QUALITY_MAX;
-  char bdf[10];
-
-  for (a = first_adna; a; a=a->next) {
-    snprintf(bdf, sizeof(bdf), "%02x:%02x.%d", a->this->bus, a->this->slot, a->this->func);
-    if (a->bIsD3) { // Do not process non hotplug device
-      printf("%s is not Hotplug capable. Skipping device.\n", bdf);
-      continue;
-    }
-
-    read_buffer = pcimem_read_linkup(a);
-    linkStat = (read_buffer >> 29) & 1;
-    printf("H1A DS Port %s Link is %s", bdf, linkStat == 1 ? "Up" : "Down");
-#if 0
-      if ((1 == linkStat) && (EP_PRESENT != g_h1a_dev_struct[i].present)) {
-        PRINTF(", was Down previously\n");
-        adnacom_stoptimer();
-        linkQuality = h1a_link_up_routine(i);
-        if ((IDEAL != linkQuality) || (WIDTH_DEGRADED != linkQuality)) {
-          link_bad_count[i]++;
-        }
-
-    if (EP_PRESENT != g_h1a_dev_struct[i].present) {
-    ep_down_count[i]++;
-    }
-
-    if ((LINK_RETRAIN_LIMIT <= link_bad_count[i]) || (LINK_RETRAIN_LIMIT <= ep_down_count[i])) {
-    link_bad_count[i] = 0;
-    ep_down_count[i] = 0;
-    reset_h1a_root_port();
-    }
-
-    adnacom_settimer100ms();
-    } else if ((H1A_LINK_IS_UP != linkStat) && (EP_PRESENT == g_h1a_dev_struct[i].present)) {
-    PRINTF(", was Up previously\n");
-    adnacom_stoptimer();
-    h1a_link_down_routine(i);
-    adnacom_settimer100ms();
-#endif
-    if ((0 == linkStat) && (NULL == a->hub)) {
-      a->link_down_cnt++;
-      if (10 <= a->link_down_cnt) {
-        printf(" and has been Down for 1s\n");
-        a->link_down_cnt = 0;
-        disable_port(a);
-        for (int noop = 0; noop < 100; noop++) { }
-        enable_port(a);
-      }
-    } else {
-    // MISRA-C compliance
-    }
-
-    printf("\n");
-  }
-
-  fflush(stdout);
-#endif
 }
 
 /* Main */
