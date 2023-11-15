@@ -271,18 +271,18 @@ int pci_check_link_cap(struct pci_dev *pdev)
 
   if (    (0 == strcmp("ok", link_compare(sta_speed, cap_speed)))
        && (0 == strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = IDEAL;
+    status = IDEAL;
   } else if (    (0 != strcmp("ok", link_compare(sta_speed, cap_speed)))
               && (0 == strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = SPEED_DEGRADED;
+    status = SPEED_DEGRADED;
   } else if (    (0 == strcmp("ok", link_compare(sta_speed, cap_speed)))
               && (0 != strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = WIDTH_DEGRADED;
+    status = WIDTH_DEGRADED;
   } else if (    (0 != strcmp("ok", link_compare(sta_speed, cap_speed)))
               && (0 != strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = SPEED_N_WIDTH_DEGRADED;
+    status = SPEED_N_WIDTH_DEGRADED;
   } else {
-      // MISRA-C compliance
+    ; //
   }
   return status;
 }
