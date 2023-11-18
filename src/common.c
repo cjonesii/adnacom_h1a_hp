@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 #include "pciutils.h"
+#include "common.h"
 
 void NONRET
 die(char *msg, ...)

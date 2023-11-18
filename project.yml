@@ -47,6 +47,7 @@
   :test:
     - *common_defines
     - TEST
+    - PCI_CONFIG_H
   :test_preprocess:
     - *common_defines
     - TEST
@@ -75,10 +76,33 @@
     :html_medium_threshold: 75
     :html_high_threshold: 90
 
-#:tools:
+:tools:
 # Ceedling defaults to using gcc for compiling, linking, etc.
 # As [:tools] is blank, gcc will be used (so long as it's in your system path)
 # See documentation to configure a given toolchain for use
+  :test_compiler:
+    :executable: gcc
+    :name: test_compiler
+    :arguments:
+      - -I"$": COLLECTION_PATHS_TEST_TOOLCHAIN_INCLUDE
+      - -I"$": COLLECTION_PATHS_TEST_SUPPORT_SOURCE_INCLUDE_VENDOR
+      - -D$: COLLECTION_DEFINES_TEST_AND_VENDOR
+      - -DGNU_COMPILER
+      - -Wall
+      - -W
+      - -Wno-parentheses
+      - -Wstrict-prototypes
+      - -Wno-missing-braces
+      - -g 
+      - -std=gnu99
+      - -c ${1}
+      - -o ${2}
+  :test_linker:
+    :executable: gcc
+    :name: 'test_linker'
+    :arguments:
+      - ${1} lib/libpci.a
+      - -o ${2}
 
 # LIBRARIES
 # These libraries are automatically injected into the build process. Those specified as

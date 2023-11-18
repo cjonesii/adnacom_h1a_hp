@@ -45,6 +45,7 @@
   :test:
   - &1 []
   - TEST
+  - PCI_CONFIG_H
   :test_preprocess:
   - *1
   - TEST
@@ -107,23 +108,33 @@
 :tools:
   :test_compiler:
     :executable: gcc
-    :name: default_test_compiler
+    :name: test_compiler
+    :arguments:
+    - -I"$": COLLECTION_PATHS_TEST_TOOLCHAIN_INCLUDE
+    - -I"$": COLLECTION_PATHS_TEST_SUPPORT_SOURCE_INCLUDE_VENDOR
+    - "-D$": COLLECTION_DEFINES_TEST_AND_VENDOR
+    - "-DGNU_COMPILER"
+    - "-Wall"
+    - "-W"
+    - "-Wno-parentheses"
+    - "-Wstrict-prototypes"
+    - "-Wno-missing-braces"
+    - "-g"
+    - "-std=gnu99"
+    - "-c ${1}"
+    - "-o ${2}"
     :stderr_redirect: :none
     :background_exec: :none
     :optional: false
+  :test_linker:
+    :executable: gcc
+    :name: test_linker
     :arguments:
-    - ''
-    - ''
-    - -I"$": COLLECTION_PATHS_TEST_SUPPORT_SOURCE_INCLUDE_VENDOR
-    - -I"$": COLLECTION_PATHS_TEST_TOOLCHAIN_INCLUDE
-    - "-D$": COLLECTION_DEFINES_TEST_AND_VENDOR
-    - "-DGNU_COMPILER"
-    - "-g"
-    - ''
-    - -c "${1}"
-    - -o "${2}"
-    - "-MMD"
-    - -MF "${4}"
+    - "${1} lib/libpci.a"
+    - "-o ${2}"
+    :stderr_redirect: :none
+    :background_exec: :none
+    :optional: false
   :test_fixture:
     :executable: "${1}"
     :name: default_test_fixture
@@ -131,22 +142,6 @@
     :background_exec: :none
     :optional: false
     :arguments: []
-  :test_linker:
-    :executable: gcc
-    :name: default_test_linker
-    :stderr_redirect: :none
-    :background_exec: :none
-    :optional: false
-    :arguments:
-    - ''
-    - ''
-    - ''
-    - '"${1}"'
-    - "${5}"
-    - -o "${2}"
-    - ''
-    - "${4}"
-    - ''
   :test_file_preprocessor:
     :executable: gcc
     :name: default_test_file_preprocessor

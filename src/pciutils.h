@@ -22,12 +22,6 @@
 
 extern const char program_name[];
 
-void die(char *msg, ...) NONRET PCI_PRINTF(1,2);
-void *xmalloc(size_t howmuch);
-void *xrealloc(void *ptr, size_t howmuch);
-char *xstrdup(const char *str);
-int parse_generic_option(int i, struct pci_access *pacc, char *arg);
-
 #ifdef PCI_HAVE_PM_INTEL_CONF
 #define GENOPT_INTEL "H:"
 #define GENHELP_INTEL "-H <mode>\tUse direct hardware access (<mode> = 1 or 2)\n"

@@ -93,7 +93,7 @@ LSPCIINC=$(SRC_DIRS)/adna.h $(SRC_DIRS)/pciutils.h $(PCIINC)
 $(BUILD_DIR)/$(TARGET_EXEC): $(OBJS) lib/$(PCILIB)
 	$(CC) $(LDFLAGS) $(TARGET_ARCH) $^ $(LDLIBS) -o $@ 
 
-$(BUILD_DIR)/%.c.o: %.c $(LSPCIINC) $(PCIINC)
+$(BUILD_DIR)/%.c.o: %.c
 	$(CC) $(CPPFLAGS) $(CFLAGS) -c $< -o $@
 
 %.8 %.7 %.5: %.man
