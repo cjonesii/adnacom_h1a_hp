@@ -45,8 +45,8 @@ LIBDIR=$(PREFIX)/lib
 PKGCFDIR=$(LIBDIR)/pkgconfig
 
 # Systemd file and directory
-SERVICE_FILE=h1a_hotplug.service
-SERVICE_NAME=h1a_hotplug
+SERVICE_FILE=h1a_hp.service
+SERVICE_NAME=h1a_hp
 SYSTEMD_DIR=`pkg-config systemd --variable=systemdsystemunitdir`
 
 # 
