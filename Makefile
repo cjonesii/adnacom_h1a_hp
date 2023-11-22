@@ -50,7 +50,7 @@ SERVICE_NAME=h1a_hotplug
 SYSTEMD_DIR=`pkg-config systemd --variable=systemdsystemunitdir`
 
 # 
-TARGET_EXEC := adna
+TARGET_EXEC := h1a_hp
 BUILD_DIR := ./build
 SRC_DIRS := ./src
 SRCS := $(shell find $(SRC_DIRS) -name '*.cpp' -or -name '*.c')
@@ -75,7 +75,7 @@ PCIINC_INS=lib/config.h lib/header.h lib/pci.h lib/types.h
 
 export
 
-all: lib/$(PCILIB) $(BUILD_DIR)/$(TARGET_EXEC)
+all: lib/$(PCILIB) $(TARGET_EXEC)
 
 lib/$(PCILIB): $(PCIINC) force
 	$(MAKE) -C lib all
@@ -85,12 +85,12 @@ force:
 lib/config.h lib/config.mk:
 	cd lib && ./configure
 
-$(BUILD_DIR)/$(TARGET_EXEC): LDLIBS+=$(LIBKMOD_LIBS)
+$(TARGET_EXEC): LDLIBS+=$(LIBKMOD_LIBS)
 $(BUILD_DIR)/ls-kernel.c.o: CFLAGS+=$(LIBKMOD_CFLAGS)
 
 LSPCIINC=$(SRC_DIRS)/adna.h $(SRC_DIRS)/pciutils.h $(PCIINC)
 
-$(BUILD_DIR)/$(TARGET_EXEC): $(OBJS) lib/$(PCILIB)
+$(TARGET_EXEC): $(OBJS) lib/$(PCILIB)
 	$(CC) $(LDFLAGS) $(TARGET_ARCH) $^ $(LDLIBS) -o $@ 
 
 $(BUILD_DIR)/%.c.o: %.c
@@ -109,7 +109,7 @@ TAGS:
 
 clean:
 	rm -f `find . -name "*~" -o -name "*.[oa]" -o -name "\#*\#" -o -name TAGS -o -name core -o -name "*.orig"`
-	rm -f build/adna lib/config.* *.[578] lib/*.pc lib/*.so lib/*.so.* tags
+	rm -f $(TARGET_EXEC) lib/config.* *.[578] lib/*.pc lib/*.so lib/*.so.* tags
 	rm -rf maint/dist
 
 distclean: clean
@@ -123,7 +123,7 @@ endif
 
 # -c is ignored on Linux, but required on FreeBSD
 	$(DIRINSTALL) -m 755 $(DESTDIR)$(SBINDIR) $(DESTDIR)$(IDSDIR)
-	$(INSTALL) -c -m 755 $(STRIP) $(BUILD_DIR)/$(TARGET_EXEC) $(DESTDIR)$(SBINDIR)
+	$(INSTALL) -c -m 755 $(STRIP) $(TARGET_EXEC) $(DESTDIR)$(SBINDIR)
 
 ifeq ($(SHARED),yes)
 ifeq ($(LIBEXT),dylib)

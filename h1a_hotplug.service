@@ -3,7 +3,7 @@ Description=H1A Hotplug Utility service
 
 [Service]
 Type=simple
-ExecStart=/usr/local/sbin/adna
+ExecStart=/usr/local/sbin/h1a_hp
 
 [Install]
 WantedBy=multi-user.target
