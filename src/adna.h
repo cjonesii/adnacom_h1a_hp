@@ -26,8 +26,12 @@
  *
  */
 
+#ifndef __ADNA_H__
+#define __ADNA_H__
+
 #define PCIUTILS_LSPCI
 #include "pciutils.h"
+#include "common.h"
 #include <stdbool.h>
 
 /*
@@ -125,13 +129,19 @@ enum access {
     REG_WRITE
 };
 
+struct adna_options {
+  bool bVerbose;
+  int bLoadFile;
+  char    FileName[255];
+  char    SerialNumber[4];
+  u16     ExtraBytes;
+  bool bListOnly;
+  bool bSerialNumber;
+};
+
 /* ls-vpd.c */
 
 void cap_vpd(struct device *d);
-
-/* ls-caps.c */
-
-void show_caps(struct device *d, int where);
 
 /* ls-ecaps.c */
 
@@ -158,3 +168,11 @@ void show_forest(struct pci_filter *filter);
 
 void map_the_bus(void);
 void adna_set_d3_flag(int devnum);
+
+int adna_pci_process(void);
+void adna_set_init_flag(bool value);
+void adna_timer_callback(int signum);
+int adna_delete_list(void);
+int adna_get_errors(void);
+
+#endif //__ADNA_H__

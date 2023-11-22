@@ -1,0 +1,10 @@
+---
+build/test/mocks/mock_pciutils.c:
+- TEST
+- PCI_CONFIG_H
+src/common.c:
+- TEST
+- PCI_CONFIG_H
+src/adna.c:
+- TEST
+- PCI_CONFIG_H

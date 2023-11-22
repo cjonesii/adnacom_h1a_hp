@@ -9,8 +9,8 @@
 #define __PCIUTILS_H__
 
 
-#include "lib/pci.h"
-#include "lib/sysdep.h"
+#include "../lib/pci.h"
+#include "../lib/sysdep.h"
 
 #ifdef PCI_OS_WINDOWS
 #include "compat/getopt.h"
@@ -21,12 +21,6 @@
 #define PCIUTILS_VERSION PCILIB_VERSION
 
 extern const char program_name[];
-
-void die(char *msg, ...) NONRET PCI_PRINTF(1,2);
-void *xmalloc(size_t howmuch);
-void *xrealloc(void *ptr, size_t howmuch);
-char *xstrdup(const char *str);
-int parse_generic_option(int i, struct pci_access *pacc, char *arg);
 
 #ifdef PCI_HAVE_PM_INTEL_CONF
 #define GENOPT_INTEL "H:"

@@ -30,7 +30,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
-#include "adna.h"
 #include <stdbool.h>
 #include <unistd.h>
 #include <termios.h>
@@ -40,10 +39,12 @@
 #include <errno.h>
 #include <signal.h>
 
-#include "setpci.h"
-
 #include <time.h>
 #include <sys/time.h>
+
+#include "adna.h"
+#include "setpci.h"
+#include "ls-caps.h"
 
 #define PLX_VENDOR_ID       (0x10B5)
 #define PLX_H1A_DEVICE_ID   (0x8608)
@@ -56,7 +57,6 @@
 #define TI_CLASS_ID         (0x0C03)
 #define TI_VENDOR_ID        (0x104C)
 #define TI_DEVICE_ID        (0x8241)
-#define ADNATOOL_VERSION    "0.0.1"
 
 #define H1A_DISABLE_PORT1_OFFSET    (0x0234)
 #define H1A_DS_PORT1_OFFSET (0x1000)
@@ -101,16 +101,6 @@ struct adnatool_pci_device {
         {0}, /* sentinel */
 };
 
-struct adna_options {
-  bool bVerbose;
-  int bLoadFile;
-  char    FileName[255];
-  char    SerialNumber[4];
-  u16     ExtraBytes;
-  bool bListOnly;
-  bool bSerialNumber;
-};
-
 struct adna_device {
   struct adna_device *next;
   struct pci_filter *this, *parent, *hub;
@@ -129,7 +119,6 @@ int pci_check_link_cap(struct pci_dev *pdev);
 
 static void stoptimer(void);
 static void settimer100ms(void);
-static void timer_callback(int signum);
 
 static void pci_get_res0(struct pci_filter *f, char *path, size_t pathlen)
 {
@@ -271,18 +260,18 @@ int pci_check_link_cap(struct pci_dev *pdev)
 
   if (    (0 == strcmp("ok", link_compare(sta_speed, cap_speed)))
        && (0 == strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = IDEAL;
+    status = IDEAL;
   } else if (    (0 != strcmp("ok", link_compare(sta_speed, cap_speed)))
               && (0 == strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = SPEED_DEGRADED;
+    status = SPEED_DEGRADED;
   } else if (    (0 == strcmp("ok", link_compare(sta_speed, cap_speed)))
               && (0 != strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = WIDTH_DEGRADED;
+    status = WIDTH_DEGRADED;
   } else if (    (0 != strcmp("ok", link_compare(sta_speed, cap_speed)))
               && (0 != strcmp("ok", link_compare(sta_width, cap_width)))) {
-      status = SPEED_N_WIDTH_DEGRADED;
+    status = SPEED_N_WIDTH_DEGRADED;
   } else {
-      // MISRA-C compliance
+    ; //
   }
   return status;
 }
@@ -1040,7 +1029,7 @@ static void show(void)
         show_verbose(d);
 }
 
-static int delete_adna_list(void)
+int adna_delete_list(void)
 {
   struct adna_device *a, *b;
   for (a=first_adna;a;a=b) {
@@ -1147,7 +1136,17 @@ static int adna_pacc_init(void)
   return 0;
 }
 
-static int adna_pci_process(void)
+int adna_get_errors(void)
+{
+  return seen_errors;
+}
+
+void adna_set_init_flag(bool value)
+{
+  is_initialized = value;
+}
+
+int adna_pci_process(void)
 {
   adna_pacc_init();
   scan_devices();
@@ -1233,7 +1232,7 @@ static void settimer100ms(void)
     new_timer.it_interval.tv_usec = 100 * 1000;
 
     setitimer(ITIMER_REAL, &new_timer, &old_timer);
-    signal(SIGALRM, timer_callback);
+    signal(SIGALRM, adna_timer_callback);
 }
 
 /*! @brief Stop timer */
@@ -1250,7 +1249,7 @@ static void stoptimer(void)
     setitimer(ITIMER_REAL, &new_timer, &old_timer);
 }
 
-static void timer_callback(int signum)
+void adna_timer_callback(int signum)
 {
   (void)(signum);
   struct adna_device *a;
@@ -1324,50 +1323,4 @@ static void timer_callback(int signum)
     }
   }
   adna_pacc_cleanup();
-}
-
-/* Main */
-int main(int argc, char **argv)
-{
-  verbose = 2; // flag used by pci process
-  int status = EXIT_SUCCESS;
-  uint8_t remaining = 3; // arbitrary delay before first run
-
-  struct itimerval new_timer;
-  struct itimerval old_timer;
-
-  new_timer.it_value.tv_sec = 1;
-  new_timer.it_value.tv_usec = 0;
-  new_timer.it_interval.tv_sec = 0;
-  new_timer.it_interval.tv_usec = 100 * 1000;
-
-  if (argc == 2 && !strcmp(argv[1], "--version")) {
-    puts("Adnacom version " ADNATOOL_VERSION);
-    return 0;
-  } else if ((argc == 2 && !strcmp(argv[1], "-v"))) {
-    AdnaOptions.bVerbose = true;
-  }
-
-  status = adna_pci_process();
-  if (status != EXIT_SUCCESS)
-    exit(1);
-  else
-    is_initialized = true;
-
-  setitimer(ITIMER_REAL, &new_timer, &old_timer);
-  signal(SIGALRM, timer_callback);
-
-  while (sleep(remaining) != 0) {
-    if (errno == EINTR) {
-      ;// PRINTF("Timer Interrupt ");
-    } else {
-      printf("Sleep error %s\n", strerror(errno));
-    }
-  }
-
-  status = delete_adna_list();
-  if (status != EXIT_SUCCESS)
-    exit(1);
-
-  return (seen_errors ? 2 : 0);
 }

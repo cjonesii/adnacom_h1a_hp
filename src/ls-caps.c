@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include "adna.h"
+#include "ls-caps.h"
 
 static void
 cap_pm(struct device *d, int where, int cap)
