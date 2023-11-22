@@ -86,7 +86,7 @@ struct adna_options AdnaOptions;
 
 struct pci_access *pacc;
 struct device *first_dev;
-struct adna_device *first_adna = NULL;
+static struct adna_device *first_adna = NULL;
 static int seen_errors;
 static int need_topology;
 static bool is_initialized = false;
@@ -1305,7 +1305,7 @@ void adna_timer_callback(int signum)
           sleep(1);
           settimer100ms();
         } else if (!is_linkup && !is_hubup) {
-          if ((10 == a->link_down_cnt) || 
+          if ((10 == a->link_down_cnt) ||
               (10 == a->hub_down_cnt)) {
             printf(" and has been Down for 1s\n");
             printf("%s disabling/enabling port", bdf);
