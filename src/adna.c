@@ -1305,8 +1305,8 @@ void adna_timer_callback(int signum)
           sleep(1);
           settimer100ms();
         } else if (!is_linkup && !is_hubup) {
-          if ((10 == a->link_down_cnt) ||
-              (10 == a->hub_down_cnt)) {
+          if ((10 <= a->link_down_cnt) ||
+              (10 <= a->hub_down_cnt)) {
             printf(" and has been Down for 1s\n");
             printf("%s disabling/enabling port", bdf);
             a->link_down_cnt = 0;
